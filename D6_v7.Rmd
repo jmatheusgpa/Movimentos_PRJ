@@ -1,6 +1,6 @@
 ---
 title: "Projeto Final "
-author: "José Matheus - 11178503"
+author: "José Matheus"
 date: "29/05/2020"
 output:
   html_document: default
