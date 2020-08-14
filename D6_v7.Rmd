@@ -97,10 +97,10 @@ movs_df <- readRDS("movs_resumidos_03082020.RDS")
 
 
 #são 272 processos diferentes que já foram finalizados
-movs_df %>%
-  select(processo) %>%
-  distinct() %>%
-  nrow()
+# movs_df %>%
+#   select(processo) %>%
+#   distinct() %>%
+#   nrow()
 
 
 #deixando tudo em letra minúscula ####
