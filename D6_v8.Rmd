@@ -347,6 +347,15 @@ movs_df_completo <- movs_df
 movs_df <- movs_df %>%
   filter(str_detect(linkToPdf, ""))
 
+#vamos remover também as movimentações que são do tipo Edital, pois estas contém textos de decisões passadas
+
+#pega todos os movimentos que começam com "Edital"
+filtro_edital <-  descr_movimentos[str_detect(descr_movimentos, "^(E|e)dital")]
+
+movs_df <- movs_df %>% 
+  filter(!(movimento %in% filtro_edital))
+
+
 ```
 
 
@@ -477,13 +486,6 @@ hom_art58 <- movs_df %>%
   ungroup()
 
 
-hom_art582 <- movs_df %>% 
-  procura_resume("art(igo|.) 58") %>% 
-  arrange(processo, desc(date)) %>% 
-  group_by(processo) %>% 
-  slice(1) %>% 
-  ungroup()
-
 linhas_hom_art58 <- nrow(hom_art58)
 #não retornou muitas linhas. Tem 106 observações, dentre elas algumas que são de decretação de falência
 
@@ -496,7 +498,7 @@ hom_art58 <- hom_art58 %>%
 
 #analisando os textos manualmente, vemos que as expressões "concedo a recuperação judicial", "o plano deve ser homologado" e "homologacao do plano de recuperão judicial aprovado" são comuns. (Tentei filtrar palavras-chave assim fazendo a tokenização do texto, mas não funcionou tanto quanto eu gostaria)
 
-pattern_homol <- c("concedo a recuperacao judicial", "o plano deve ser homologado","o plano de recuperacao judicial deve ser homologado", "homologo o plano") %>% paste(collapse = "|")
+pattern_homol <- c("concedo a recuperacao judicial", "o plano deve ser homologado","o plano de recuperacao judicial deve ser homologado", "homologo o plano", "fica homologada a recuperacao judicial","fica homologado o plano de recuperacao judicial","o plano de recuperacao deve ser homologado", "concedo recuperacao judicial") %>% paste(collapse = "|")
 
 
 hom_homol <- movs_df %>% 
@@ -505,6 +507,9 @@ hom_homol <- movs_df %>%
   group_by(processo) %>% 
   slice(1) %>% 
   ungroup()
+
+
+
 
 
 
@@ -519,7 +524,7 @@ hom_art61 <- movs_df %>%
 #artigo 57 também é bastante citado na concessão de recuperações judiciais, pois fala da dispensa de certidão negativa de débitos
 
 #muitas vezes o juiz cita o artigo 57 mais de uma vez: as primeiras vezes para cobrar as certidões ao credor e a última na sentença de concessão da recuperacão judicial.
-#assim, vamos filtrar a última movimentação na qual o juiz citou artigo 57 em cada processo (lógica diferente dos demais casos)
+#assim, vamos filtrar a ÚLTIMA movimentação na qual o juiz citou artigo 57 em cada processo (lógica diferente dos demais casos)
 
 
 
@@ -542,22 +547,91 @@ hom_art57 <- movs_df %>%
 #   ungroup()
 
 
+
+
+#vou colocar mais um filtro, usando artigo 73 (hipóteses para convolação em falência), junto do artigo 99 (sentença de decretação de falência).
+
+#filtro primeiro casos que foram de falência, depois casos de foram convolados em falência pelo art 73
+
+#vamos filtrar casos do artigo 73 pelos incisos:
+#iii quando o plano é rejeitado em assembleia geral dos credores
+#ii quando a empresa não apresenta o plano
+#a ideia é NÃO pegar casos do inciso iv, quando a falência é decretada porque a empresa não cumpriu plano
+hom_art_99_73 <- movs_df %>%
+  procura_resume("art(igo|.) 99") %>%
+  procura_resume("73, inc(iso|.) ii | 73, inc(iso|.) iii | 73, iii | 73, ii") %>%
+  arrange(processo, desc(date)) %>% 
+  group_by(processo) %>% 
+  slice(1) %>% 
+  ungroup()
+
+
+
+
+#art 45 trata dos critérios para aprovar plano de recuperação em assembleia geral de credores
+#se tiver art 45 + art 99, provavelmente a decretação de falencia tem a ver com rejeição do plano
+hom_art_99_45 <- movs_df %>%
+  procura_resume("art(igo|.) 99") %>%
+  procura_resume("art(igo|.) 45") %>%
+  arrange(processo, desc(date)) %>% 
+  group_by(processo) %>% 
+  slice(1) %>% 
+  ungroup()
+
+
+
+
 #juntando as bases de dados sobre homologação e removendo dados duplicados
 #neste caso, vão ficar os dados das primeiras bases que eu colocar
 #assim, eu priorizo os dados nos quais eu tenho mais certeza de estarem corretos
 #achei este código mais limpo que o rascunho no chunk abaixo
 hom <- hom_filtro %>% 
-  bind_rows(hom_homol, hom_art58, hom_art57) %>% 
+  bind_rows(hom_homol, hom_art58, hom_art57, hom_art_99_73) %>% 
   group_by(processo) %>% 
   slice(1) %>% 
   ungroup()
 
-hom <- hom %>% 
+
+#com quantos processos eu fico com a data se remover art 58?
+hom2 <- hom_filtro %>% 
+  bind_rows(hom_homol, hom_art_99_73) %>% 
+  group_by(processo) %>% 
+  slice(1) %>% 
+  ungroup()
+
+hom <- hom2 %>% 
   select(processo, date, detalhes, detalhes_resumo, id_linha) %>% 
   rename(data_hom = date,
          detalhes_hom = detalhes,
          detalhes_hom_resumo = detalhes_resumo,
          id_linha_hom = id_linha)
+
+
+
+check_58 <- hom_art58 %>% 
+  anti_join(hom, by = "processo")
+
+#e se fizer com a última movimentação do artigo 58?
+
+hom_art582 <- movs_df %>% 
+  procura_resume("art(igo|.) 58") %>% 
+  arrange(processo, desc(date)) %>% 
+  group_by(processo) %>% 
+  slice(1) %>% 
+  ungroup() %>% 
+  filter(!str_detect(detalhes, "art(igo|.) 99| art(igo|.) 104"))
+
+
+check_582 <- hom_art582 %>% 
+  anti_join(hom, by = "processo")
+
+#checando art 57
+
+check_57 <- hom_art57 %>% 
+  anti_join(hom, by = "processo")
+
+
+
 
 
 ```
@@ -680,31 +754,6 @@ datas_rj <- datas_rj %>%
 #vamos ver os casos para verificar
 cronograma_verificar <- cronograma %>% 
   filter(!(dias_def_hom == 0))
-
-```
-
-
-
-
-```{r exemplos de dados que chamaram a atenção}
-
-
-
-ex1 <- movs_df %>% filter(id_linha == 31528) %>% pull(detalhes)
-#processamento deferido em 24/03/2009
-#teve assembleia geral de credores depois
-#plano foi aprovado em AGC
-#"decido, o plano deve ser homologado". Decisão dia 2010-10-06
-
-
-
-#caso que aparece quando filtramos pelo artigo 58 (que fala da homologação do PRJ), mas a movimentação é uma decretação de falência
-#id_linha dele é 2996
-
-
-ex2 <- movs_df %>% filter(id_linha == 2996)
-# ex2 %>% pull(processo)
-
 
 ```
 
@@ -1108,7 +1157,7 @@ check_hom_convol2 <- datas_rj %>%
 #vamos incorporar isso usando case_when()
 
 
-pattern_73 <- c("73, iii, | 73, inc. iii, | 73, inciso iii, | 73, ii, | 73, inc. ii, | 73, inciso ii,")
+pattern_73 <- c("73, iii | 73, inc(iso|.) iii | 73, ii | 73, inc(iso|.) ii")
 
 datas_rj <- datas_rj %>% 
   mutate(data_hom = case_when(is.na(data_hom) & str_detect(detalhes_final, pattern_73) ~ data_final,
@@ -1411,6 +1460,8 @@ na_final_lista <- datas_rj %>%
 #173769: teve sua quebra decretada por este juízo
 #decretação de falência não está digitalizada, aconteceu no dia 25/04/2018. Página 1858 do pdf do auto
 
+
+
 #1008112-48.2015.8.26.0152
 #ainda estava em andamento em 2019. A recuperação foi encerrada com êxito em 2020
 
@@ -1429,6 +1480,28 @@ na_final_lista <- datas_rj %>%
 
 
 ```
+
+
+```{r conferindo dados do input_manual}
+
+input_manual <- readRDS('outcomes_ze_matheus.RDS')
+
+
+#checando processos que parecem estar em andamento
+
+
+#1008112-48.2015.8.26.0152
+#1023746-04.2015.8.26.0114
+#1025824-13.2015.8.26.0100
+
+#os três ainda estão em andamento, vou excluir da análise.
+
+
+
+```
+
+
+
 
 ```{r processos sem data de homologação ou rejeição do plano}
 
@@ -1457,8 +1530,27 @@ na_hom_datasrj <- datas_rj %>%
 #homologo o plano aprovado em assembleia de credores
 
 #0000547-55.2014.8.26.0291
-#
+#225
+#homologo, para que produza todos os efeitos de direito, o plano de recuperacao judicial substitutivo
 
+
+#0013945-42.2012.8.26.0161
+# detalhes_id_linha(179965)
+#julgo procedente o pedido de convolacao da recuperacao judicial e decreto a falencia de \"andiaco laminados ltda.\", com fulcro no artigo 73
+
+
+
+#0033994-59.2013.8.26.0100
+#detalhes_id_linha(172880
+#a convolacao da recuperacao judicial em falencia, objeto dos artigos 61, § 1º e 73, iv, ambos da lei n. 11.101/05. posto isso, nos termos do art. 73, inc. iv, da lei nº 11.101/05, convolo em falencia a recuperacao judicial da empresa pointh display materiais promocionais ltda.
+## empresa que faliu antes de aprovar o plano de recuperação judicial
+## como separar casos de falência do inciso iv quando a firma ainda não homologou plano?
+
+#0036024-03.2012.8.26.0068
+# detalhes_id_linha(19102)
+#conforme ja determinado na sentenca de convolacao em falencia. fls. 2248/2249: providencie a administradora judicial a instauracao de incidente para analise dos balancos, devendo a falida apresentar esclarecimentos no referido incidente, a fim de se evitar tumulto procedimental.
+#o art. 45, §1º da lrf
+#pg 1815 foi decretada falência, em 14 de agosto de 2015
 
 
 ```
