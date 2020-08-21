@@ -630,12 +630,46 @@ check_582 <- hom_art582 %>%
 check_57 <- hom_art57 %>% 
   anti_join(hom, by = "processo")
 
+#depois: fazer anti_join do hom_art_99_45
 
 
 
 
 ```
 
+```{r testando novas expressoes para homologacao}
+
+pattern_homol2 <- c("conceder a recuperacao judicial") %>% paste(collapse = "|")
+
+
+hom_homol2 <- movs_df %>% 
+  procura_resume(pattern_homol2) %>% 
+  arrange(processo, date) %>% 
+  group_by(processo) %>% 
+  slice(1) %>% 
+  ungroup()
+
+check_homol2 <- hom_homol2 %>% 
+  anti_join(hom, by = "processo")
+#não ficou muito bom
+
+pattern_homol3 <- c("homologo\\s*(.*?)\\s* plano de recuperacao") %>% paste(collapse = "|")
+
+padroes_exemplo <- c("homologo, para que surtam seus regulares efeitos, o plano de recuperacao judicial", "homologo o novo plano de recuperacao judicial")
+
+str_view_all(padroes_exemplo, pattern_homol3)
+
+hom_homol3 <- movs_df %>% 
+  procura_resume(pattern_homol3) %>% 
+  arrange(processo, date) %>% 
+  group_by(processo) %>% 
+  slice(1) %>% 
+  ungroup()
+
+check_homol3 <- hom_homol3 %>% 
+  anti_join(hom, by = "processo")
+
+```
 
 
 
@@ -1429,6 +1463,7 @@ na_final_lista <- datas_rj %>%
   distinct(processo)
 
 
+#detalhes sobre os 7 casos sem data de finalização: 4 têm erro de fato, 3 casos não foram encerrados (erro meu no input manual)
 
 #0008645-88.2012.8.26.0100
 #presente recuperacao judicial fora encerrada por sentença transitada em julgado
@@ -1436,31 +1471,13 @@ na_final_lista <- datas_rj %>%
 #4049 : movimento de baixa definitiva com encerramento do bienio
 #4042: decretação, por sentença, do encerramento da recuperacao judicial
 
-
-#0017709-93.2010.8.26.0100
-#ESAJ não publicou a decretação de falência
-
 #0024997-87.2013.8.26.0100
 #comentários sobre carta de arrematação, mas tá esquisito
 
 
-
-#0133085-64.2009.8.26.0100
-#decretação de falência não aparece nos movimentos digitalizados
-
-#1004044-30.2017.8.26.0073
-#linha 7069: cita art. 99.
-#vou ver pq art. 99 não pegou esse processo
-
-
-#0008645-88.2012.8.26.0100
-#4042: decretacao, por sentenca, do encerramento da recuperacao judicial
-
 #0133085-64.2009.8.26.0100
 #173769: teve sua quebra decretada por este juízo
 #decretação de falência não está digitalizada, aconteceu no dia 25/04/2018. Página 1858 do pdf do auto
-
-
 
 #1008112-48.2015.8.26.0152
 #ainda estava em andamento em 2019. A recuperação foi encerrada com êxito em 2020
@@ -1471,11 +1488,27 @@ na_final_lista <- datas_rj %>%
 #1023746-04.2015.8.26.0114
 #acho que ainda está em andamento também
 
-
 #1025824-13.2015.8.26.0100
 #acho que ainda está em andamento
 #AJ pediu para encerrar a recuperação, credores discordaram e não tem movimento de encerramento até hoje
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#0017709-93.2010.8.26.0100
+#ESAJ não publicou a decretação de falência
 
 
 
