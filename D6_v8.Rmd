@@ -347,6 +347,10 @@ movs_df_completo <- movs_df
 movs_df <- movs_df %>%
   filter(str_detect(linkToPdf, ""))
 
+#excluindo colunas desnecessárias
+movs_df <- movs_df %>% 
+  select(-c('fullMatch', 'linkToPdf', 'id'))
+
 #vamos remover também as movimentações que são do tipo Edital, pois estas contém textos de decisões passadas
 
 #pega todos os movimentos que começam com "Edital"
@@ -431,32 +435,6 @@ hom_filtro <- movs_df %>%
   filter(movimento == "Concedida a recuperação judicial")
 
 
-#fazendo um ngram para procurar as palavras mais comuns
-#não fazemos filtro com stopwords porque queremos as expressões tais como estão escritas no texto
-#e não tiramos as stopwords do texto porque queremos filtrar expressões regulares, não fazer a tokenização
-
-
-hom_filtro_ngram <- hom_filtro %>% unnest_tokens(ngram, detalhes,
-                                       token="ngrams", n=3) 
-
-#filtrando palavras com poucas letras
-# hom_filtro_ngram %>%
-#   filter(str_length(ngram)>3) %>% 
-#   group_by(ngram) %>% 
-#   tally() %>% 
-#   top_n(100, n) %>% 
-#   arrange(n)
-
-pattern_hom_filtro <- c("plano de recuperacao",
-                        "negativas de debitos",
-                        "em recuperacao judicial") %>% paste(collapse = " | ")
-
-
-hom_pattern_filtro <- movs_df %>%
-  procura_resume("plano de recuperacao") %>% 
-  filter(!str_detect(detalhes, "a contar"))
-
-
 ```
 No caso da aprovação (homologação) do plano, identifiquei que os juízes usualmente falam "concedo a recuperação judicial" em suas decisões. Fiz um filtro baseado nesse critério. Aprovação, homologação do plano e concessão da recuperação judicial são sinônimos no contexto desse projeto.
 
@@ -509,43 +487,16 @@ hom_homol <- movs_df %>%
   ungroup()
 
 
+#outras expressões que encontrei com frequência foram: 'homologo (...) plano de recuperacao'. 
+#Ex: "homologo, para que surtam seus regulares efeitos, o plano de recuperacao judicial"
+#criando um novo filtro para isso
 
-
-
-
-hom_art61 <- movs_df %>%
-  procura_resume("art(igo|.) 61") %>% 
+hom_homol_regex <- movs_df %>% 
+  procura_resume("homologo\\s*(.*?)\\s* plano de recuperacao") %>% 
   arrange(processo, date) %>% 
   group_by(processo) %>% 
   slice(1) %>% 
   ungroup()
-  
-
-#artigo 57 também é bastante citado na concessão de recuperações judiciais, pois fala da dispensa de certidão negativa de débitos
-
-#muitas vezes o juiz cita o artigo 57 mais de uma vez: as primeiras vezes para cobrar as certidões ao credor e a última na sentença de concessão da recuperacão judicial.
-#assim, vamos filtrar a ÚLTIMA movimentação na qual o juiz citou artigo 57 em cada processo (lógica diferente dos demais casos)
-
-
-
-hom_art57 <- movs_df %>% 
-  procura_resume("art(igo|.) 57") %>% 
-  arrange(processo, desc(date)) %>% 
-  group_by(processo) %>% 
-  slice(1) %>% 
-  ungroup()
-
-
-#tentando com a palavra suspensao. Resultado não foi promissor porque ela também é usada em decretação de falência e também quando a empresa faz o requerimento da recuperação judicial
-# hom_suspensao <- movs_df %>% 
-#   procura_resume("suspensao")
-# 
-# hom_suspensao <- hom_suspensao %>% 
-#   arrange(processo, date) %>% 
-#   group_by(processo) %>% 
-#   slice(1) %>% 
-#   ungroup()
-
 
 
 
@@ -567,17 +518,6 @@ hom_art_99_73 <- movs_df %>%
 
 
 
-
-#art 45 trata dos critérios para aprovar plano de recuperação em assembleia geral de credores
-#se tiver art 45 + art 99, provavelmente a decretação de falencia tem a ver com rejeição do plano
-hom_art_99_45 <- movs_df %>%
-  procura_resume("art(igo|.) 99") %>%
-  procura_resume("art(igo|.) 45") %>%
-  arrange(processo, desc(date)) %>% 
-  group_by(processo) %>% 
-  slice(1) %>% 
-  ungroup()
-
 #aparentemente alguns casos do artigo 73, inciso iv foram declarados erroneamente pelo juiz
 #queremos os casos do artigo 73, inciso iv, nos quais a empresa faliu antes de ter o plano homologado
 hom_art_99_73iv <- movs_df %>%
@@ -594,22 +534,14 @@ hom_art_99_73iv <- movs_df %>%
 #juntando as bases de dados sobre homologação e removendo dados duplicados
 #neste caso, vão ficar os dados das primeiras bases que eu colocar
 #assim, eu priorizo os dados nos quais eu tenho mais certeza de estarem corretos
-#achei este código mais limpo que o rascunho no chunk abaixo
+
 hom <- hom_filtro %>% 
-  bind_rows(hom_homol, hom_art58, hom_art57, hom_art_99_73) %>% 
+  bind_rows(hom_homol, hom_art_99_73, hom_homol_regex) %>% 
   group_by(processo) %>% 
   slice(1) %>% 
   ungroup()
 
-
-#com quantos processos eu fico com a data se remover art 58 e art 57?
-hom2 <- hom_filtro %>% 
-  bind_rows(hom_homol, hom_art_99_73) %>% 
-  group_by(processo) %>% 
-  slice(1) %>% 
-  ungroup()
-
-hom <- hom2 %>% 
+hom <- hom %>% 
   select(processo, date, detalhes, detalhes_resumo, id_linha) %>% 
   rename(data_hom = date,
          detalhes_hom = detalhes,
@@ -618,30 +550,8 @@ hom <- hom2 %>%
 
 
 
-check_58 <- hom_art58 %>% 
-  anti_join(hom, by = "processo")
 
-#e se fizer com a última movimentação do artigo 58?
-
-hom_art582 <- movs_df %>% 
-  procura_resume("art(igo|.) 58") %>% 
-  arrange(processo, desc(date)) %>% 
-  group_by(processo) %>% 
-  slice(1) %>% 
-  ungroup() %>% 
-  filter(!str_detect(detalhes, "art(igo|.) 99| art(igo|.) 104"))
-
-
-check_582 <- hom_art582 %>% 
-  anti_join(hom, by = "processo")
-
-#checando art 57
-
-check_57 <- hom_art57 %>% 
-  anti_join(hom, by = "processo")
-
-#depois: fazer anti_join do hom_art_99_45
-
+#achei melhor não usar artigos 57 ou 58 ou 61, eles davam muitos falsos positivos
 
 
 
@@ -1564,6 +1474,8 @@ na_hom_datasrj <- datas_rj %>%
 
 #checando cada processo que falta data de homologação ####
 
+#o objetivo é identificar em quais casos NÃO podemos usar a data de falência como proxy para homologação
+
 #padrão é:
 ##processo
 ##id_linha1
@@ -1575,18 +1487,18 @@ na_hom_datasrj <- datas_rj %>%
 #único processo que não tem data de homologação nem de finalização. Empresa faliu antes de ter processo homologado
 
 
-#0001920-16.2010.8.26.0048
+#0001920-16.2010.8.26.0048 #tem homologação
 #169834
 #autorizo a recuperacao judicial de droga farma > deferimento da rj
 #170073
 #homologo o plano aprovado em assembleia de credores
 
-#0000547-55.2014.8.26.0291
+#0000547-55.2014.8.26.0291 #tem homologação
 #225
 #homologo, para que produza todos os efeitos de direito, o plano de recuperacao judicial substitutivo
 
 
-#0013275-91.2008.8.26.0048
+#0013275-91.2008.8.26.0048 #tem homologação
 #160947
 #entendo por bem conceder a recuperacao judicial
 
@@ -1609,9 +1521,45 @@ na_hom_datasrj <- datas_rj %>%
 #o art. 45, §1º da lrf
 #pg 1815 foi decretada falência, em 14 de agosto de 2015
 
-
-
 #0036903-79.2010.8.26.0100
+#161961
+#ate a presente data nao foi realizada a assembleia geral de credores ... decreto hoje, as 17 horas, nos termos dos artigos 61, § 1º e 73, iv, ambos da lei n. 11.101/05, a falencia da empresa
+
+#0039066-27.2013.8.26.0100
+# 169021
+#sem que ate o momento tenha sido convocada a assembleia geral de credores ... pelo exposto, com fundamento no art. 73, paragrago unico, c/c o art. 94, iii, \"f\", da lei 11.101/2005, convolo a recuperacao em falencia
+
+#0043432-80.2011.8.26.0100
+#27600
+#a recuperanda apresentou seu plano de recuperacao judicial, entretanto, nao atendeu as intimacoes judiciais para que procedesse a publicacao do edital de aviso de entrega do plano de recuperacao judicial ...  decreto hoje, as 17 horas, nos termos dos artigos 61, § 1º e 73, iv, ambos da lei n. 11.101/05, a falencia
+
+
+#0047431-70.2013.8.26.0100 #tem homologação
+#170806
+#o plano foi aprovado em assembleia geral de credores e a recuperacao foi concedida
+#não encontrei data de homologação, só tem data de acordo com o BB
+
+#0107606-06.2008.8.26.0100 #tem homologação
+#159906
+#que nao existe razao alguma para qualquer providencia contraria ao que foi deliberado no plano de recuperacao aprovado
+#obs: plano foi aprovado antes, não achei a data
+
+#0142466-33.2008.8.26.0100 #tem homologação
+#encerrou a RJ com êxito
+#35144
+#concedida a recuperacao judicial em 29/06/2009 ... desse modo, observada a aprovacao pelos credores, homologo as alteracoes do plano de recuperacao judicial da instrucom comercio de produtos cientificos ltda, nos termos da 2ª assembleia geral de credores realizada em 30/11/2010, nos termos das atas respectivas (fls. 616/623), que passam a fazer parte do plano ja aprovado
+#acho que uma expressão regex pode captar 'homologo ... plano de recuperacao'
+
+#tem um erro no filtro porque não pega os dados que estão sem link para pdf
+#na verdade teve um plano homologado em 29/06/2009, cuja movimentação não tem link para pdf
+#35061
+
+#0151873-29.2009.8.26.0100
+#36717
+#homologo o novo plano de recuperacao judicial
+
+#
+
 
 
 #últimos processos
