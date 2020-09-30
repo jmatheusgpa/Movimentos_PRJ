@@ -344,12 +344,16 @@ lista_processos <- primeira_mov %>%
 movs_df_completo <- movs_df
 
 
-movs_df <- movs_df %>%
-  filter(str_detect(linkToPdf, ""))
+# movs_df <- movs_df %>%
+#   filter(str_detect(linkToPdf, ""))
+# 
+# #excluindo colunas desnecessárias
+# movs_df <- movs_df %>% 
+#   select(-c('fullMatch', 'linkToPdf', 'id'))
 
-#excluindo colunas desnecessárias
-movs_df <- movs_df %>% 
-  select(-c('fullMatch', 'linkToPdf', 'id'))
+
+
+  
 
 #vamos remover também as movimentações que são do tipo Edital, pois estas contém textos de decisões passadas
 
@@ -360,6 +364,11 @@ movs_df <- movs_df %>%
   filter(!(movimento %in% filtro_edital))
 
 
+
+#movimentos sem linkToPdf de novo
+movs_df_resumido <- movs_df %>% 
+  filter(str_detect(linkToPdf, "")) %>% 
+  select(-c('fullMatch', 'linkToPdf', 'id'))
 ```
 
 
@@ -479,6 +488,7 @@ hom_art58 <- hom_art58 %>%
 pattern_homol <- c("concedo a recuperacao judicial", "o plano deve ser homologado","o plano de recuperacao judicial deve ser homologado", "homologo o plano", "fica homologada a recuperacao judicial","fica homologado o plano de recuperacao judicial","o plano de recuperacao deve ser homologado", "concedo recuperacao judicial") %>% paste(collapse = "|")
 
 
+
 hom_homol <- movs_df %>% 
   procura_resume(pattern_homol) %>% 
   arrange(processo, date) %>% 
@@ -497,7 +507,6 @@ hom_homol_regex <- movs_df %>%
   group_by(processo) %>% 
   slice(1) %>% 
   ungroup()
-
 
 
 #vou colocar mais um filtro, usando artigo 73 (hipóteses para convolação em falência), junto do artigo 99 (sentença de decretação de falência).
@@ -563,7 +572,7 @@ pattern_homol2 <- c("conceder a recuperacao judicial") %>% paste(collapse = "|")
 
 
 hom_homol2 <- movs_df %>% 
-  procura_resume(pattern_homol2) %>% 
+  procura_resume(" bem conceder a recuperacao judicial") %>% 
   arrange(processo, date) %>% 
   group_by(processo) %>% 
   slice(1) %>% 
@@ -1472,6 +1481,32 @@ na_hom_lista <- datas_rj %>%
 na_hom_datasrj <- datas_rj %>% 
   filter(is.na(data_hom)) 
 
+
+
+
+#dados de falências sem data de homologação.
+#pode ser que a data de falência seja a data de rejeição do plano
+na_hom_fal <- na_hom_datasrj %>% 
+  filter(resultado == 'falência') %>% 
+  select(-c(3:6))
+
+na_hom_fal_lista <- na_hom_datasrj %>% 
+  filter(resultado == 'falência') %>% 
+  select(processo) %>% 
+  distinct()
+
+
+checagem <- function(x){
+  
+  check <- movs_df %>%
+  filter(processo == x) %>% 
+  procura_resume("plano | aprovado | homolog | assembleia")
+  
+  view(check)
+  
+}
+
+
 #checando cada processo que falta data de homologação ####
 
 #o objetivo é identificar em quais casos NÃO podemos usar a data de falência como proxy para homologação
@@ -1483,11 +1518,14 @@ na_hom_datasrj <- datas_rj %>%
 ##id_linha2
 ##comentário id_linha2
 
+#tabulado significa que coletei a data de homologação após ajustar o código regex
+
+
 #1012203-08.2016.8.26.0554
 #único processo que não tem data de homologação nem de finalização. Empresa faliu antes de ter processo homologado
 
 
-#0001920-16.2010.8.26.0048 #tem homologação
+#0001920-16.2010.8.26.0048 #tem homologação #tabulado
 #169834
 #autorizo a recuperacao judicial de droga farma > deferimento da rj
 #170073
@@ -1498,7 +1536,7 @@ na_hom_datasrj <- datas_rj %>%
 #homologo, para que produza todos os efeitos de direito, o plano de recuperacao judicial substitutivo
 
 
-#0013275-91.2008.8.26.0048 #tem homologação
+#0013275-91.2008.8.26.0048 #tem homologação #tabulado
 #160947
 #entendo por bem conceder a recuperacao judicial
 
@@ -1529,48 +1567,193 @@ na_hom_datasrj <- datas_rj %>%
 # 169021
 #sem que ate o momento tenha sido convocada a assembleia geral de credores ... pelo exposto, com fundamento no art. 73, paragrago unico, c/c o art. 94, iii, \"f\", da lei 11.101/2005, convolo a recuperacao em falencia
 
+
 #0043432-80.2011.8.26.0100
 #27600
 #a recuperanda apresentou seu plano de recuperacao judicial, entretanto, nao atendeu as intimacoes judiciais para que procedesse a publicacao do edital de aviso de entrega do plano de recuperacao judicial ...  decreto hoje, as 17 horas, nos termos dos artigos 61, § 1º e 73, iv, ambos da lei n. 11.101/05, a falencia
 
 
-#0047431-70.2013.8.26.0100 #tem homologação
+#0047431-70.2013.8.26.0100 #tem homologação 
 #170806
 #o plano foi aprovado em assembleia geral de credores e a recuperacao foi concedida
 #não encontrei data de homologação, só tem data de acordo com o BB
+#olhei o processo duas vezes e não achei decisão que homologasse o plano. Podemos usar falência como data de rejeição
 
-#0107606-06.2008.8.26.0100 #tem homologação
+
+
+#0107606-06.2008.8.26.0100 #tem homologação #tabulado
 #159906
 #que nao existe razao alguma para qualquer providencia contraria ao que foi deliberado no plano de recuperacao aprovado
 #obs: plano foi aprovado antes, não achei a data
 
-#0142466-33.2008.8.26.0100 #tem homologação
+
+#0142466-33.2008.8.26.0100 #tem homologação #tabulado
 #encerrou a RJ com êxito
 #35144
 #concedida a recuperacao judicial em 29/06/2009 ... desse modo, observada a aprovacao pelos credores, homologo as alteracoes do plano de recuperacao judicial da instrucom comercio de produtos cientificos ltda, nos termos da 2ª assembleia geral de credores realizada em 30/11/2010, nos termos das atas respectivas (fls. 616/623), que passam a fazer parte do plano ja aprovado
 #acho que uma expressão regex pode captar 'homologo ... plano de recuperacao'
 
+
 #tem um erro no filtro porque não pega os dados que estão sem link para pdf
 #na verdade teve um plano homologado em 29/06/2009, cuja movimentação não tem link para pdf
-#35061
+#35061 (30/09: já coletei esse dado mais recente)
 
-#0151873-29.2009.8.26.0100
+#0151873-29.2009.8.26.0100 #tem homologação #tabulado
 #36717
 #homologo o novo plano de recuperacao judicial
 
-#
 
 
+# 1000073-74.2014.8.26.0224
+# plano foi rejeitado por uma classe e juiz preferiu convolar em falência
 
-#últimos processos
+# 1000186-82.2016.8.26.0539
+# plano rejeitado
+
+# 1000414-47.2016.8.26.0219
+# não chegou a votar o plano
+
+# 1000464-86.2016.8.26.0538
+# não chegou a votar o plano (ou isso não aparece na movimentação)
 
 
+#1000718-73.2017.8.26.0037
+# não chegou a votar o plano
 
+#1000989-12.2015.8.26.0180
+# não chegou a votar o plano
+
+
+#1001774-95.2014.8.26.0248
+#não chegou a votar o plano
+
+#1002139-25.2015.8.26.0278
+#plano rejeitado
+
+#1002196-77.2014.8.26.0666
+#plano rejeitado
+
+#1002315-50.2014.8.26.0565
+#não chegou a votar o plano
+
+#1002317-10.2013.8.26.0127
+#não chegou a votar o plano
+
+#1002593-72.2016.8.26.0115
+#não chegou a votar o plano
+
+#1002736-60.2016.8.26.0568
+#não chegou a votar o plano
+
+#1002781-81.2014.8.26.0100
+#credores apresentaram objeção e empresa decidiu falir antes de tentar votar
+
+#1004159-59.2016.8.26.0114 #tem homologação
+#71114
+#ciencia a todos os interessados sobre o plano aprovado
+
+
+#1004418-81.2015.8.26.0278 #tem homologação
+#não tem movimento sobre o plano ter sido aprovado
+
+
+#1004718-69.2016.8.26.0161
+#não chegou a votar o plano
+
+#1005217-59.2014.8.26.0408
+#75472
+#digam todos os interessados, inclusive, recuperanda, administradora e ministerio publico, acerca da certidao do oficial de justica que da conta do encerramento das atividades comerciais, bem como do fato do imovel no qual estabelecida encontrar-se fechado
+#não chegou a votar o plano
+
+#1005245-54.2016.8.26.0344
+#não chegou a votar o plano
+
+#1005397-07.2017.8.26.0526
+#não encontrei homologação do plano
+
+#1006752-59.2013.8.26.0278
+#não chegou a votar o plano
+
+#1006879-94.2013.8.26.0278
+#não chegou a votar o plano
+
+#1011894-65.2016.8.26.0625
+#não chegou a votar o plano
+
+#1012224-51.2014.8.26.0037
+#não encontrei data de homologação nos movimentos digitalizados
+#chequei pdf e.. não chegou a votar o plano
+
+#1014271-94.2017.8.26.0068
+#não chegou a votar o plano
+# por tudo isso, a designacao de assembleia geral se mostra desnecessaria e inutil neste momento, porque nao ha mais o interesse de agir
+
+#1017667-88.2016.8.26.0529 #tem homologação
+#teve plano de recuperação, conforme a sentença da página 840 do pdf. Não achei a aprovação do plano por enquanto
+
+#1017737-96.2017.8.26.0068
+#plano foi rejeitado, aparentemente:
+#93124: vista ao m.p para manifestacao quanto a aprovacao ou nao da assembleia e consequente decretacao da falencia
+
+#1021922-52.2014.8.26.0564
+#não chegou a apresentar plano de recuperação judicial
+
+#1022188-11.2015.8.26.0562 #tem homologação
+#não consegui checar se tem ou não homologação do plano
+
+
+#1038177-65.2014.8.26.0506
+#não chegou a votar o plano
+#'com a paralisacao das atividades da empresa, como verificado pessoalmente pela ilustre magistrada do trabalho da comarca de rancharia-sp., a presente recuperacao judicial esta descaracterizada'
+
+#1041821-65.2017.8.26.0100
+#não chegou a votar o plano
+
+#1048330-12.2017.8.26.0100
+#113049: objecao ao plano de recuperacao judicial, cumulado com pedido de decretacao de falencia
+#dois meses depois a empresa faliu, logo podemos considerar a data de falência como data de rejeição
+
+#1048371-81.2014.8.26.0100
+#não chegou a votar o plano
+
+#1056096-53.2016.8.26.0100
+#não chegou a votar o plano
+
+#1059314-13.2017.8.26.0114
+#'... e tambem pela prorrogacao do prazo de suspensao previsto no artigo 6º, § 4º, da lei nº 11.101/2005, ate a homologacao do plano de recuperacao ou por mais 180 dias, o que ocorrer primeiro (fls. 1334/1341). manifestou-se o ministerio publico informando que o pedido das recuperandas ficou prejudicado em funcao do confessado estado de inviabilidade economica na continuidade das atividades comerciais. opinou pela imediata convolacao da recuperacao em quebra (fls.1351/1352).'
+#não chegou a votar o plano
+
+
+#1060672-89.2016.8.26.0100
+#'no caso dos autos, os credores discordaram da viabilidade da reestruturacao. a ata da assembleia geral de credores fora juntada a fls. 889 e seguintes. pela deliberacao dos credores, o plano de recuperacao judicial foi rejeitado por 100% da classe dos credores quirografarios'
+#plano foi rejeitado
+
+#1064828-57.2015.8.26.0100
+#não chegou a votar o plano
+
+#1069904-91.2017.8.26.0100
+#em janeiro tem a publicação do plano de recuperação, em maio há falência. Não teve homologação
+
+
+#1071698-50.2017.8.26.0100 
+#120899: '...a assembleia geral de credores deliberou e aprovou o plano de fls. 1200/1219..', 'no caso dos autos, o plano nao pode ser homologado, pois contempla injusto tratamento desigual entre credores de mesma classe, sem qualquer justificativa economica'
+#empresa aprovou plano ilegal, juiz não homologou, empresa entrou com recurso, juiz julgou recurso no ano seguinte dizendo que a empresa estava prestes a falir, meses depois há a decretação de falência
+
+#1080363-94.2013.8.26.0100
+#' assim, nao aprovado o plano, de rigor, portanto, a convolacao da recuperacao judicial em falencia.2 - posto isso, decreto hoje, nos termos do artigo 56, §4o, da lei n. 11.101/05, a falencia da empresa anglo americana comercial de ferro e aco ltda (cnpj 57.359.937/0001-75) '
+#plano rejeitado
+
+#1114530-69.2015.8.26.0100
+#'entre os credores e as devedoras nao houve concordancia suficiente a lograr-se a aprovacao do plano de recuperacao judicial (fl. 1333)'
+#plano rejeitado
+
+#1131562-87.2015.8.26.0100
+#plano rejeitado
 
 #3000117-39.2013.8.26.0048
-#não tem homologação
 #14742 artigo 73, inciso iv
-
+#não chegou a votar o plano
+#indício de fraude na recuperação
 
 
 #4000630-20.2013.8.26.0038
@@ -1586,7 +1769,106 @@ na_hom_datasrj <- datas_rj %>%
 #conferi e não encontrei data de homologação do plano. O juiz agendou assembleia geral, depois o adm judicial recomendou falência e o juiz acatou
 
 
+#4012585-14.2013.8.26.0114
+#'objecoes foram apresentadas ao plano de recuperacao judicial (fls. 2747/2749, 2762/2764).antes que o edital da relacao de credores fosse publicado (fl. 3045), as autoras pediram convolacao da recuperacao judicial em falencia, diante da incapacidade financeira em cumprir o plano apresentado (fls. 2861/2869 e 3110/3111).o administrador judicial informou nao ter localizado as autoras no novo endereco fornecido (fl. 3048, item 6) e concordou com a convolacao da recuperacao em falencia (fls. 3061/3062),'
+#não chegou a votar o plano
 
+
+#4015031-87.2013.8.26.0405
+#convolou em falência usando inciso ii do art. 73, a saber: 'II - pela não apresentação, pelo devedor, do plano de recuperação no prazo do art. 53 desta Lei;'
+
+
+
+
+# resumo ####
+#quais processos resultaram em falência e que ainda não tabulei a data de homologação?
+
+#1022188-11.2015.8.26.0562 #tem homologação
+#não consegui checar se tem ou não homologação do plano
+
+#1017667-88.2016.8.26.0529 #tem homologação
+#teve plano de recuperação, conforme a sentença da página 840 do pdf. Não achei a aprovação do plano por enquanto
+
+
+#1004159-59.2016.8.26.0114 #tem homologação
+#71114
+#ciencia a todos os interessados sobre o plano aprovado
+
+
+#1004418-81.2015.8.26.0278 #tem homologação
+#não tem movimento sobre o plano ter sido aprovado
+
+#0047431-70.2013.8.26.0100 #tem homologação 
+#170806
+#o plano foi aprovado em assembleia geral de credores e a recuperacao foi concedida
+#não encontrei data de homologação, só tem data de acordo com o BB
+#olhei o processo duas vezes e não achei decisão que homologasse o plano. Podemos usar falência como data de rejeição
+
+#0000547-55.2014.8.26.0291 #tem homologação
+#225
+#homologo, para que produza todos os efeitos de direito, o plano de recuperacao judicial substitutivo
+
+
+
+
+```
+
+```{r processos sem data de homologação ou rejeição do plano - parte 2 de 2}
+#aqui vou listar os processos que foram reorganizados com êxito, assim eu sei que eles têm data de homologação
+
+na_hom_reorg_lista <- na_hom_datasrj %>% 
+  filter(resultado == 'encerrou RJ com êxito') %>% 
+  select(processo) %>% 
+  distinct()
+
+
+# 0013275-91.2008.8.26.0048
+#160947
+#entendo por bem conceder a recuperacao judicial
+
+# 1000374-40.2015.8.26.0562
+#não achei data de homologação
+
+
+# 1004272-50.2016.8.26.0037
+#não achei data de homologação, parece que teve acordo com os credores
+
+# 1013766-34.2016.8.26.0361
+#não encontrei data de homologação
+
+
+# 1097074-09.2015.8.26.0100
+#134317
+#desistência da recuperação judicial
+
+
+# 1108161-88.2017.8.26.0100
+#136070
+#decreto a falencia de edb engenharia do brasil
+#MAS LOGO EM SEGUIDA TEM ENCERRAMENTO COM ÊXITO DA RJ
+#acho que a 'data de homologação' seria 2018-12-18, pois é a data onde julgaram suspensa a decisão de decretar a falência da firma devido ao plano rejeitado. Vou assumir então que o plano foi aceito. Ou então devemos descartar a observação. O id da linha onde isso está é 136119
+
+
+
+
+
+```
+
+```{r casos com encerramento após 2018}
+
+#aqui teve uma mistura dos casos que eu filtrei na reorganizations_court_info_csv
+
+
+datas_rj %>% 
+  filter(data_final > '2018-12-31')
+
+
+
+#casos do input manual que foram encerrados
+
+# input_manual %>% 
+#   filter(outcome %in% c('Recuperacao Judicial foi convolada em falencia','Recuperacao Judicial foi encerrada')) %>%
+#   tally() #tem 197 casos. Então da onde vieram os 274 casos?
 
 ```
 
