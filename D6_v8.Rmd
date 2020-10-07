@@ -520,7 +520,7 @@ hom_art_99_73iv <- movs_df %>%
 
 #expressões específicadas encontradas analisando manualmente os processos que ficaram sem data de homologação na primeira versão do trabalho
 
-pattern_nahom <- c('ciencia a todos os interessados sobre o plano aprovado') %>% paste(collapse = "|")
+pattern_nahom <- c('ciencia a todos os interessados sobre o plano aprovado', 'entendo por bem conceder a recuperacao judicial') %>% paste(collapse = "|")
 
 hom_nahom <- movs_df %>% 
   procura_resume(pattern_nahom) %>% 
@@ -592,27 +592,13 @@ check_homol3 <- hom_homol3 %>%
 
 
 hom_homol4 <- movs_df %>% 
-  procura_resume('ciencia a todos os interessados sobre o plano aprovado') %>% 
+  procura_resume('entendo por bem conceder a recuperacao judicial') %>% 
   arrange(processo, date) %>% 
   group_by(processo) %>% 
   slice(1) %>% 
   ungroup()
   
 
-#checando se faz diferença no resultado final
-
-hom2 <- hom_filtro %>% 
-  bind_rows(hom_homol, hom_art_99_73, hom_homol_regex, hom_homol4) %>% 
-  group_by(processo) %>% 
-  slice(1) %>% 
-  ungroup()
-
-hom2 <- hom2 %>% 
-  select(processo, date, detalhes, detalhes_resumo, id_linha) %>% 
-  rename(data_hom = date,
-         detalhes_hom = detalhes,
-         detalhes_hom_resumo = detalhes_resumo,
-         id_linha_hom = id_linha)
 
 
 
@@ -968,6 +954,20 @@ enc_decreto <- movs_df_completo %>%
 #   slice(1) %>% 
 #   ungroup()
 
+
+#expressões específicas observadas nos processos sem data de finalização da primeira versão do trabalho
+
+pattern_nafinal_enc <- c('vem a conclusao com requerimento da administradora judicial para encerramento, por forca do cumprimento das obrigacoes vencidas') %>% paste(collapse = "|")
+
+enc_nafinal <- movs_df_completo %>% 
+  procura_resume(pattern_nafinal_enc) %>% 
+  arrange(processo,date) %>% 
+  group_by(processo) %>% 
+  slice(1) %>% 
+  ungroup()
+
+
+
 #juntando as bases de dados sobre encerramento e removendo duplicatas
 enc <- enc_filtro %>% 
   bind_rows(enc_decreto) %>% 
@@ -1034,9 +1034,19 @@ dec_art99 <- movs_df_completo %>%
   ungroup()
 
 
+#expressões específicas ao analisar casos sem data de finalização da primeira versão do trabalho
+pattern_nafinal_dec <- c('a recuperanda teve sua quebra decretada por este juizo') %>% paste(collapse = '|')
+
+dec_nafinal <- movs_df_completo %>% 
+  procura_resume(pattern_nafinal_dec) %>% 
+  arrange(processo,date) %>% 
+  group_by(processo) %>% 
+  slice(1) %>% 
+  ungroup()
+
 #juntando os filtros
 dec <- dec_filtro %>% 
-  bind_rows(dec_art99, dec_falencia) %>% 
+  bind_rows(dec_art99, dec_falencia,dec_nafinal) %>% 
   arrange(processo, date) %>% 
   group_by(processo) %>% 
   slice(1) %>% 
@@ -1402,6 +1412,7 @@ datas_rj %>%
 #### 12. Procurando dados que não encontramos antes
 
 Parece melhor começar achando as datas de finalização dos processos. O texto das decisões de finalização pode conter detalhes sobre quando os planos foram homologados.
+
 ```{r processos sem data de finalização}
 
 na_final <- datas_rj %>% 
@@ -1414,51 +1425,39 @@ na_final_lista <- datas_rj %>%
   distinct(processo)
 
 
-#detalhes sobre os 7 casos sem data de finalização: 4 têm erro de fato, 3 casos não foram encerrados (erro meu no input manual)
+#detalhes sobre os 7 casos sem data de finalização: 3 têm expressões específicas demais, 3 casos não foram encerrados e 1 caso de autofalência
 
-#0008645-88.2012.8.26.0100
-#presente recuperacao judicial fora encerrada por sentença transitada em julgado
+#0008645-88.2012.8.26.0100 #tabulado
+#4081: presente recuperacao judicial fora encerrada por sentença transitada em julgado
 #4081
-#4049 : movimento de baixa definitiva com encerramento do bienio
+#4049 :movimento de baixa definitiva com encerramento do bienio
 #4042: decretação, por sentença, do encerramento da recuperacao judicial
 
-#0024997-87.2013.8.26.0100
+#0024997-87.2013.8.26.0100 #descartar
 #comentários sobre carta de arrematação, mas tá esquisito
+#chequei as movimentações virtuais e não achei decisão de encerramento/falência. Caso está em andamento, foi erro no input
 
 
-#0133085-64.2009.8.26.0100
+#0133085-64.2009.8.26.0100 #tabulado
 #173769: teve sua quebra decretada por este juízo
 #decretação de falência não está digitalizada, aconteceu no dia 25/04/2018. Página 1858 do pdf do auto
+#a data de decretação de falência que constará é de dezembro de 2018. Vou deixar assim porque a data em si não importa para o trabalho
 
-#1008112-48.2015.8.26.0152
-#ainda estava em andamento em 2019. A recuperação foi encerrada com êxito em 2020
 
-#1012203-08.2016.8.26.0554
+#1008112-48.2015.8.26.0152 #descartar
+#ainda estava em andamento em 2019. A recuperação foi encerrada com êxito em junho de 2020. Vou descartar pois pode ter efeito do covid
+
+#1012203-08.2016.8.26.0554 #descartar
 #empresa faliu antes de ter o plano homologado. Foi autofalência. Página 484
 
-#1023746-04.2015.8.26.0114
+#1023746-04.2015.8.26.0114 #descartar
 #acho que ainda está em andamento também
 
-#1025824-13.2015.8.26.0100
+#1025824-13.2015.8.26.0100 #descartar
 #acho que ainda está em andamento
 #AJ pediu para encerrar a recuperação, credores discordaram e não tem movimento de encerramento até hoje
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-#0017709-93.2010.8.26.0100
+#0017709-93.2010.8.26.0100 #tabulado
 #ESAJ não publicou a decretação de falência
 #a data do processo é de quando o juiz pede para publicar o edital do artigo 99, que teoricamente era para ser a data da falência
 
@@ -1518,12 +1517,11 @@ na_hom_fal_lista <- na_hom_datasrj %>%
   distinct()
 
 
-
 checagem <- function(x){
 #checa quais movimentações do processo x possuem as palavras-chave inseridas em 'procura_resume'  
   check <- movs_df %>%
   filter(processo == x) %>% 
-  procura_resume("plano | aprov | homolog | assembleia")
+  procura_resume("plano | aprov | rejeit| homolog | assembleia | art(.|igo) 58")
   
   view(check)
   
@@ -1544,7 +1542,7 @@ checagem <- function(x){
 #tabulado significa que coletei a data de homologação após ajustar o código regex
 
 
-#1012203-08.2016.8.26.0554
+#1012203-08.2016.8.26.0554 #descartar
 #único processo que não tem data de homologação nem de finalização. Empresa faliu antes de ter processo homologado
 
 
@@ -1818,15 +1816,14 @@ checagem <- function(x){
 
 
 
-#1004159-59.2016.8.26.0114 #tem homologação
+#1004159-59.2016.8.26.0114 #tem homologação #tabulado
 #71114
 #ciencia a todos os interessados sobre o plano aprovado
 
 
-checagem('1004159-59.2016.8.26.0114')
-
-#1004418-81.2015.8.26.0278 #tem homologação
+#1004418-81.2015.8.26.0278
 #não tem movimento sobre o plano ter sido aprovado
+#relatório da decisão do juiz dia 29/01/2019 cita que a empresa não chegou a ter plano aprovado. Podemos usar falência como data de rejeição do plano
 
 
 #0047431-70.2013.8.26.0100
@@ -1851,37 +1848,108 @@ na_hom_reorg_lista <- na_hom_datasrj %>%
   distinct()
 
 
-# 0013275-91.2008.8.26.0048
+# 0013275-91.2008.8.26.0048 #tabulado
 #160947
 #entendo por bem conceder a recuperacao judicial
 
-# 1000374-40.2015.8.26.0562
+
+
+# 1000374-40.2015.8.26.0562 #descartar
 #não achei data de homologação
+#51352: empresa faz pedido de "levantamento da recuperação judicial" porque consegue quitar todas as dívidas. Entendo isso como uma desistência, logo a observação será descartada
 
 
-# 1004272-50.2016.8.26.0037
+
+# 1004272-50.2016.8.26.0037 #descartar
 #não achei data de homologação, parece que teve acordo com os credores
+#pg 845 do pdf: adm judicial fala que negociou acordos com os credores de modo a encerrar a RJ. Vou descartar esse processo, pois parece desistência
 
-# 1013766-34.2016.8.26.0361
+
+
+
+# 1013766-34.2016.8.26.0361 #descartar
 #não encontrei data de homologação
+#fl 1174 do pdf: juiz diz que a recuperanda pagou todas as suas dívidas. Vou descartar esse processo, pois parece desistência
 
 
-# 1097074-09.2015.8.26.0100
+
+
+# 1097074-09.2015.8.26.0100 #descartar
 #134317
 #desistência da recuperação judicial
 
 
-# 1108161-88.2017.8.26.0100
+# 1108161-88.2017.8.26.0100 #descartar
 #136070
 #decreto a falencia de edb engenharia do brasil
 #MAS LOGO EM SEGUIDA TEM ENCERRAMENTO COM ÊXITO DA RJ
 #acho que a 'data de homologação' seria 2018-12-18, pois é a data onde julgaram suspensa a decisão de decretar a falência da firma devido ao plano rejeitado. Vou assumir então que o plano foi aceito. Ou então devemos descartar a observação. O id da linha onde isso está é 136119
+#data final ocorre menos de dois  anos após a data de requerimento desse processo. É o caso de descartar.
 
 
 
+
+checagem('1013766-34.2016.8.26.0361')
 
 
 ```
+
+
+```{r casos a serem descartados}
+#depois de analisar todos os casos acima, vamos agora descartar os casos que por algum motivo não nos ajudarão na pesquisa:
+#1) casos nos quais houve desistência da recuperação judicial
+#2) casos nos quais não encontramos data de homologação nem de finalização simultaneamente
+#3) casos nos quais ...
+
+
+descartar <- c('1097074-09.2015.8.26.0100', '1000374-40.2015.8.26.0562', '1004272-50.2016.8.26.0037', '1013766-34.2016.8.26.0361','1108161-88.2017.8.26.0100', '1012203-08.2016.8.26.0554', '1012203-08.2016.8.26.0554', '1023746-04.2015.8.26.0114', '1025824-13.2015.8.26.0100','1008112-48.2015.8.26.0152', '0024997-87.2013.8.26.0100')
+
+
+# 1097074-09.2015.8.26.0100 #descartar
+#134317
+#desistência da recuperação judicial
+
+# 1000374-40.2015.8.26.0562 #descartar
+#51352: empresa faz pedido de "levantamento da recuperação judicial" porque consegue quitar todas as dívidas. Entendo isso como uma desistência, logo a observação será descartada
+
+
+# 1004272-50.2016.8.26.0037 #descartar
+#pg 845 do pdf: adm judicial fala que negociou acordos com os credores de modo a encerrar a RJ. Vou descartar esse processo, pois parece desistência
+
+# 1013766-34.2016.8.26.0361 #descartar
+#fl 1174 do pdf: juiz diz que a recuperanda pagou todas as suas dívidas. Vou descartar esse processo, pois parece desistência
+
+# 1108161-88.2017.8.26.0100 #descartar
+#data final ocorre menos de dois  anos após a data de requerimento desse processo. É o caso de descartar.
+
+
+#1012203-08.2016.8.26.0554 #descartar
+#único processo que não tem data de homologação nem de finalização. Empresa faliu antes de ter processo homologado
+
+
+#1012203-08.2016.8.26.0554 #descartar
+#empresa faliu antes de ter o plano homologado. Foi autofalência. Página 484
+
+#1023746-04.2015.8.26.0114 #descartar
+#acho que ainda está em andamento também
+
+#1025824-13.2015.8.26.0100 #descartar
+#AJ pediu para encerrar a recuperação, credores discordaram e não tem movimento de encerramento até hoje
+
+#1008112-48.2015.8.26.0152 #descartar
+#ainda estava em andamento em 2019. A recuperação foi encerrada com êxito em junho de 2020. Vou descartar pois pode ter efeito do covid
+
+#0024997-87.2013.8.26.0100 #descartar
+#chequei as movimentações virtuais e não achei decisão de encerramento/falência. Caso está em andamento, foi erro no input
+
+datas_rj <- datas_rj %>% 
+  filter(!(processo %in% descartar))
+
+
+```
+
+
+
 
 ```{r casos com encerramento após 2018}
 
