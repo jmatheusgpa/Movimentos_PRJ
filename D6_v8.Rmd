@@ -449,38 +449,17 @@ No caso da aprovação (homologação) do plano, identifiquei que os juízes usu
 
 Um problema que acontece é que às vezes um documento cita trechos de decisões anteriores. Então se buscarmos "concedo a recuperação judicial", apareceria mais de uma movimentação para alguns processos. A primeira é a data da aprovação do plano de fato, enquanto a segunda movimentação apenas cita a primeira. A solução para isso foi filtrar apenas as primeiras movimentações encontradas para cada processo.
 
-Além disso, em alguns casos eu procurei por artigos específicos da Lei de Falências de 2005 (Lei Nº 11.101/2005) para guiar a pesquisa. No caso das homologações, procurei pelo Artigo 58, que cita as hipóteses nas quais os juiz pode homologar o plano:
 
-> "Art. 58. Cumpridas as exigências desta Lei, o juiz concederá a recuperação judicial
-do devedor cujo plano não tenha sofrido objeção de credor nos termos do art. 55 desta Lei ou
-tenha sido aprovado pela assembleia-geral de credores na forma do art. 45 desta Lei"
 
 ```{r homologação - expressões}
 
 #regulado pelo artigo 58
 
-#o que acontecia? às vezes um documento posterior citava trechos da decisão. 
-#Por exemplo, publicavam um edital dizendo que a decisão citou "blablablablabla" no dia tal e tal.
+#Filtrarmos a primeira observação que a cita a palavra chave em cada processo,
+#pois às vezes um documento posterior citava trechos da decisão. 
+#Por exemplo, publicavam um edital dizendo que a decisão citou "xyz" no dia tal e tal.
 #isso é comum em documentos do tipo Edital ou Certidão de Objeto e Pé, que registram o andamento dos processos
 #parece então que podemos resolver o problema pegando apenas a primeira movimentação de cada grupo
-
-#por algum motivo tem que ser (igo|.), se não o regex não funciona direito
-hom_art58 <- movs_df %>% 
-  procura_resume("art(igo|.) 58") %>% 
-  arrange(processo, date) %>% 
-  group_by(processo) %>% 
-  slice(1) %>% 
-  ungroup()
-
-
-linhas_hom_art58 <- nrow(hom_art58)
-#não retornou muitas linhas. Tem 106 observações, dentre elas algumas que são de decretação de falência
-
-#decretação de falência costuma citar o artigo 99 da LRF. Então vamos limpar todas as entradas que citarem este artigo. Outro artigo citado em falência é o artigo 104
-
-hom_art58 <- hom_art58 %>%
-  filter(!str_detect(detalhes, "art(igo|.) 99| art(igo|.) 104"))
-  
 
 
 #analisando os textos manualmente, vemos que as expressões "concedo a recuperação judicial", "o plano deve ser homologado" e "homologacao do plano de recuperão judicial aprovado" são comuns. (Tentei filtrar palavras-chave assim fazendo a tokenização do texto, mas não funcionou tanto quanto eu gostaria)
@@ -539,13 +518,25 @@ hom_art_99_73iv <- movs_df %>%
 
 
 
+#expressões específicadas encontradas analisando manualmente os processos que ficaram sem data de homologação na primeira versão do trabalho
+
+pattern_nahom <- c('ciencia a todos os interessados sobre o plano aprovado') %>% paste(collapse = "|")
+
+hom_nahom <- movs_df %>% 
+  procura_resume(pattern_nahom) %>% 
+  arrange(processo, date) %>% 
+  group_by(processo) %>% 
+  slice(1) %>% 
+  ungroup()
+
+
 
 #juntando as bases de dados sobre homologação e removendo dados duplicados
 #neste caso, vão ficar os dados das primeiras bases que eu colocar
 #assim, eu priorizo os dados nos quais eu tenho mais certeza de estarem corretos
 
 hom <- hom_filtro %>% 
-  bind_rows(hom_homol, hom_art_99_73, hom_homol_regex) %>% 
+  bind_rows(hom_homol, hom_art_99_73, hom_homol_regex, hom_nahom) %>% 
   group_by(processo) %>% 
   slice(1) %>% 
   ungroup()
@@ -597,6 +588,37 @@ hom_homol3 <- movs_df %>%
 
 check_homol3 <- hom_homol3 %>% 
   anti_join(hom, by = "processo")
+
+
+
+hom_homol4 <- movs_df %>% 
+  procura_resume('ciencia a todos os interessados sobre o plano aprovado') %>% 
+  arrange(processo, date) %>% 
+  group_by(processo) %>% 
+  slice(1) %>% 
+  ungroup()
+  
+
+#checando se faz diferença no resultado final
+
+hom2 <- hom_filtro %>% 
+  bind_rows(hom_homol, hom_art_99_73, hom_homol_regex, hom_homol4) %>% 
+  group_by(processo) %>% 
+  slice(1) %>% 
+  ungroup()
+
+hom2 <- hom2 %>% 
+  select(processo, date, detalhes, detalhes_resumo, id_linha) %>% 
+  rename(data_hom = date,
+         detalhes_hom = detalhes,
+         detalhes_hom_resumo = detalhes_resumo,
+         id_linha_hom = id_linha)
+
+
+
+check_homol4 <- hom_homol4 %>% 
+  anti_join(hom, by = "processo")
+
 
 ```
 
@@ -1496,11 +1518,12 @@ na_hom_fal_lista <- na_hom_datasrj %>%
   distinct()
 
 
+
 checagem <- function(x){
-  
+#checa quais movimentações do processo x possuem as palavras-chave inseridas em 'procura_resume'  
   check <- movs_df %>%
   filter(processo == x) %>% 
-  procura_resume("plano | aprovado | homolog | assembleia")
+  procura_resume("plano | aprov | homolog | assembleia")
   
   view(check)
   
@@ -1783,11 +1806,16 @@ checagem <- function(x){
 # resumo ####
 #quais processos resultaram em falência e que ainda não tabulei a data de homologação?
 
-#1022188-11.2015.8.26.0562 #tem homologação
+#1022188-11.2015.8.26.0562 
 #não consegui checar se tem ou não homologação do plano
+#o texto completo da decisão de decretação de falência mostra que o plano não chegou a ser aprovado. Usarei a data de falência como data de rejeição do plano
 
-#1017667-88.2016.8.26.0529 #tem homologação
+
+#1017667-88.2016.8.26.0529 
 #teve plano de recuperação, conforme a sentença da página 840 do pdf. Não achei a aprovação do plano por enquanto
+#Na verdade não teve plano de recuperação aprovado. O relatório do AJ na página 790 do pdf diz que não haviam sequer publicado edital para convicação de AGC, e após isso o juiz decreta a falência.
+
+
 
 
 #1004159-59.2016.8.26.0114 #tem homologação
@@ -1795,18 +1823,19 @@ checagem <- function(x){
 #ciencia a todos os interessados sobre o plano aprovado
 
 
+checagem('1004159-59.2016.8.26.0114')
+
 #1004418-81.2015.8.26.0278 #tem homologação
 #não tem movimento sobre o plano ter sido aprovado
 
-#0047431-70.2013.8.26.0100 #tem homologação 
+
+#0047431-70.2013.8.26.0100
 #170806
 #o plano foi aprovado em assembleia geral de credores e a recuperacao foi concedida
 #não encontrei data de homologação, só tem data de acordo com o BB
 #olhei o processo duas vezes e não achei decisão que homologasse o plano. Podemos usar falência como data de rejeição
+#na página 655 do pdf: adm judicial fala que PRJ foi rejeitado e aguarda convolação em falência
 
-#0000547-55.2014.8.26.0291 #tem homologação
-#225
-#homologo, para que produza todos os efeitos de direito, o plano de recuperacao judicial substitutivo
 
 
 
@@ -1860,7 +1889,7 @@ na_hom_reorg_lista <- na_hom_datasrj %>%
 
 
 datas_rj %>% 
-  filter(data_final > '2018-12-31')
+  filter(data_final > '2019-12-31')
 
 
 
