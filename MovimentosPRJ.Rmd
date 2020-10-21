@@ -197,6 +197,7 @@ numero_movimentos <- movs_df %>%
 descr_movimentos <- movs_df %>% 
   distinct(movimento) %>% pull() %>% sort()
 
+# descr_movimentos
 
 #quais são os movimentos que contém "falência"?
 # descr_movimentos[str_detect(descr_movimentos, "(f|F)alência")]
@@ -684,6 +685,8 @@ discard_list <- discard('1025824-13.2015.8.26.0100', 'ainda está em andamento '
 
 ##### Data de aprovação/rejeição do plano
 
+O FILTRO ESTÁ ERRADO! "CONCEDIDA A RECUPERAÇÃO JUDICIAL" NA VERDADE É A DATA DE DEFERIMENTO, NÃO A DE HOMOLOGAÇÃO
+
 A outra etapa importante é a data quando o plano de recuperação judicial é aprovado ou rejeitado. Para o plano ser aprovado, 1) ou ele não deve ter sofrido objeção dos credores ou 2 ele pode ter sofrido objeção, mas ter sido aprovado pela maioria dos credores em assembleia geral. Se o plano for rejeitado, a recuperação judicial é transformada em falência (o termo técnico "convolada em falência") 
 
 
@@ -697,8 +700,8 @@ Um problema que acontece é que às vezes um documento cita trechos de decisões
 
 
 #primeiro, vamos tentar filtrar pela movimentação para ver quantos casos existem
-hom_filtro <- movs_df %>% 
-  filter(movimento == "Concedida a recuperação judicial")
+# hom_filtro <- movs_df %>% 
+#   filter(movimento == "Concedida a recuperação judicial")
 
 
 
@@ -792,10 +795,18 @@ hom_nahom <- movs_df %>%
 #neste caso, vão ficar os dados das primeiras bases que eu colocar
 #assim, eu priorizo os dados nos quais eu tenho mais certeza de estarem corretos
 
-hom <- hom_filtro %>% 
-  bind_rows(hom_homol, hom_art_99_73, hom_nahom, hom_homol_regex) %>% 
-  group_by(processo) %>% 
-  slice(1) %>% 
+# hom <- hom_filtro %>% 
+#   bind_rows(hom_homol, hom_art_99_73, hom_nahom, hom_homol_regex) %>% 
+#   group_by(processo) %>% 
+#   slice(1) %>% 
+#   ungroup()
+
+
+#checando como fica se tirarmos o filtro
+hom <- hom_homol %>%
+  bind_rows(hom_art_99_73, hom_nahom, hom_homol_regex) %>%
+  group_by(processo) %>%
+  slice(1) %>%
   ungroup()
 
 hom <- hom %>% 
@@ -844,6 +855,10 @@ discard_list <- discard('1001489-59.2017.8.26.0099', 'processo fora das regras d
 #1028638-95.2014.8.26.0564 #descartar
 #empresa faliu antes de votar o plano. O filtro RegEx não ficou muito bom nesse caso também
 discard_list <- discard('1028638-95.2014.8.26.0564', 'empresa faliu antes de votar PRJ')
+
+#descartando casos até aqui
+datas_rj <- datas_rj %>% 
+  filter(!(processo %in% discard_list$processo))
 
 
 ```
@@ -932,6 +947,9 @@ checagem <- function(x){
 #160947
 #entendo por bem conceder a recuperacao judicial
 
+#0007390-91.2011.8.26.0048 #rejeição
+
+
 
 #0013945-42.2012.8.26.0161 #descartar
 # detalhes_id_linha(179965)
@@ -939,6 +957,15 @@ checagem <- function(x){
 #empresa faliu antes de votar PRJ
 discard_list <- discard('0013945-42.2012.8.26.0161', 'empresa faliu antes de votar PRJ')
 
+
+#0026117-39.2011.8.26.0100 #descartar
+#15983: desistiu da PRJ
+discard_list <- discard('0026117-39.2011.8.26.0100', 'empresa faliu antes de votar PRJ')
+
+
+#0029326-45.2013.8.26.0100 #descartar
+#não ocorreu AGC
+discard_list <- discard('0029326-45.2013.8.26.0100', 'empresa faliu antes de votar PRJ')
 
 
 #0033994-59.2013.8.26.0100 #descartar
@@ -948,15 +975,12 @@ discard_list <- discard('0013945-42.2012.8.26.0161', 'empresa faliu antes de vot
 ## como separar casos de falência do inciso iv quando a firma ainda não homologou plano?
 discard_list <- discard('0033994-59.2013.8.26.0100', 'empresa faliu antes de votar PRJ')
 
-#RD
 
 #0036024-03.2012.8.26.0068 #rejeição do plano
 # detalhes_id_linha(19102)
 #conforme ja determinado na sentenca de convolacao em falencia. fls. 2248/2249: providencie a administradora judicial a instauracao de incidente para analise dos balancos, devendo a falida apresentar esclarecimentos no referido incidente, a fim de se evitar tumulto procedimental.
 #o art. 45, §1º da lrf
 #pg 1815 foi decretada falência, em 14 de agosto de 2015
-
-
 
 
 
@@ -982,6 +1006,12 @@ discard_list <- discard('0043432-80.2011.8.26.0100', 'empresa faliu antes de vot
 #não encontrei data de homologação, só tem data de acordo com o BB
 #olhei o processo duas vezes e não achei decisão que homologasse o plano. Podemos usar falência como data de rejeição
 discard_list <- discard('0047431-70.2013.8.26.0100', 'autofalência')
+
+#0056786-41.2012.8.26.0100 #rejeição
+
+
+
+
 
 
 #0107606-06.2008.8.26.0100 #tem homologação #tabulado
@@ -1032,6 +1062,10 @@ discard_list <- discard('1000718-73.2017.8.26.0037', 'empresa faliu antes de vot
 # não chegou a votar o plano
 discard_list <- discard('1000989-12.2015.8.26.0180', 'empresa faliu antes de votar PRJ')
 
+#1001432-97.2017.8.26.0048 #decartar
+#decisão de decretação em falência no e-saj diz que não teve votação do plano
+discard_list <- discard('1001432-97.2017.8.26.0048', 'empresa faliu antes de votar PRJ')
+
 #1001774-95.2014.8.26.0248 #decartar
 #não chegou a votar o plano 
 discard_list <- discard('1001774-95.2014.8.26.0248', 'empresa faliu antes de votar PRJ')
@@ -1045,6 +1079,7 @@ discard_list <- discard('1001774-95.2014.8.26.0248', 'empresa faliu antes de vot
 #1002315-50.2014.8.26.0565 #descartar
 #não chegou a votar o plano
 discard_list <- discard('1002315-50.2014.8.26.0565', 'empresa faliu antes de votar PRJ')
+
 
 
 #1002317-10.2013.8.26.0127 #descartar
@@ -1092,12 +1127,19 @@ discard_list <- discard('1005217-59.2014.8.26.0408', 'empresa faliu antes de vot
 #não chegou a votar o plano
 discard_list <- discard('1005245-54.2016.8.26.0344', 'empresa faliu antes de votar PRJ')
 
+#1005319-15.2016.8.26.0278 #rejeição
+#76412: o juiz decretara a falencia do devedor\" e no artigo 73, inciso iii, do mesmo regramento legal \"o juiz decretara a falencia durante o processo de recuperacao judicial: iii quando houver sido rejeitado o plano de recuperacao
+
+
 #1005397-07.2017.8.26.0526 #descartar
 # 'Depois de vários pedidos de adiamento (fls. 669/683 e 791/798), ainda nãofoi realizada a assembléia geral de credores'
 #não encontrei homologação do plano
 discard_list <- discard('1005397-07.2017.8.26.0526', 'empresa faliu antes de votar PRJ')
 
 
+#1006301-58.2017.8.26.0451 #descartar
+#decisão: Em síntese, alegam que a Recuperanda Mutti Equipamentos Industriais Ltda. foidevidamente intimada para apresentar o plano de recuperação judicial, quando deferido o processamento da presente recuperação, mas não o fez,
+discard_list <- discard('1006301-58.2017.8.26.0451', 'empresa faliu antes de votar PRJ')
 
 #1006752-59.2013.8.26.0278 #descartar
 #não chegou a votar o plano
@@ -1107,7 +1149,6 @@ discard_list <- discard('1006752-59.2013.8.26.0278', 'empresa faliu antes de vot
 #1006879-94.2013.8.26.0278 #descartar
 #não chegou a votar o plano
 discard_list <- discard('1006879-94.2013.8.26.0278', 'empresa faliu antes de votar PRJ')
-
 
 
 #1011894-65.2016.8.26.0625 #descartar
@@ -1202,6 +1243,11 @@ discard_list <- discard('1064828-57.2015.8.26.0100', 'empresa faliu antes de vot
 #em janeiro tem a publicação do plano de recuperação, em maio há falência. Não teve homologação
 discard_list <- discard('1069904-91.2017.8.26.0100', 'empresa faliu antes de votar PRJ')
 
+#1069936-96.2017.8.26.0100 #rejeição
+#119298: PRJ foi rejeitado por todas as partes
+
+
+
 
 #1071698-50.2017.8.26.0100 #descartar, por PRJ fora das normas
 #120899: '...a assembleia geral de credores deliberou e aprovou o plano de fls. 1200/1219..', 'no caso dos autos, o plano nao pode ser homologado, pois contempla injusto tratamento desigual entre credores de mesma classe, sem qualquer justificativa economica'
@@ -1212,6 +1258,11 @@ discard_list <- discard('1071698-50.2017.8.26.0100', 'PRJ fora das normas')
 #1080363-94.2013.8.26.0100 #rejeição
 #' assim, nao aprovado o plano, de rigor, portanto, a convolacao da recuperacao judicial em falencia.2 - posto isso, decreto hoje, nos termos do artigo 56, §4o, da lei n. 11.101/05, a falencia da empresa anglo americana comercial de ferro e aco ltda (cnpj 57.359.937/0001-75) '
 #plano rejeitado
+
+#1087841-56.2013.8.26.0100 #descartar
+#129219: as recuperandas informaram a impossibilidade do cumprimento de plano de recuperacao, antes mesmo deste ser aprovado, em virtude de seu maior cliente, telemar, nao ter renovado o contrato
+discard_list <- discard('1087841-56.2013.8.26.0100', 'empresa faliu antes de votar PRJ')
+
 
 #1114530-69.2015.8.26.0100 #rejeição
 #'entre os credores e as devedoras nao houve concordancia suficiente a lograr-se a aprovacao do plano de recuperacao judicial (fl. 1333)'
@@ -1226,6 +1277,8 @@ discard_list <- discard('1071698-50.2017.8.26.0100', 'PRJ fora das normas')
 #indício de fraude na recuperação
 discard_list <- discard('3000117-39.2013.8.26.0048', 'empresa faliu antes de votar PRJ')
 
+#4000620-71.2013.8.26.0362 #rejeição
+#143153: a decisao que decretou a falencia da autora fundamentou-se na rejeicao do plano de recuperacao judicial pela assembleia geral de credores
 
 
 #4000630-20.2013.8.26.0038 #descartar
@@ -1628,20 +1681,3 @@ Visualmente, parece que mais de um terço dos casos possui menos de 24 meses ent
 
 #### 11. Checando quais casos têm dados estranhos
 
-```{r casos com data de encerramento antes da homologação}
-
-chec_hom_final <- datas_rj %>% 
-  filter(meses_hom_final < 0 )
-
-#caso com final 0539 a data final está ok, mas na verdade a homologação que foi errada
-#caso 1001489-59.2017.8.26.0099 é estranho: teve a rj convolada em falência e depois o juiz permitiu que fizessem nova assembleia, aprovassem novo plano e aí homologou a rj. Mais seguro é só retirar esse caso da amostra
-
-
-```
-
-
-
-```{r meses até requerimento muito altos}
-datas_rj %>% 
-  filter(meses_req_hom > 36)
-```
