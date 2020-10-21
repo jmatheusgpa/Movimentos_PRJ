@@ -732,14 +732,16 @@ hom_homol_regex <- movs_df %>%
 
 #filtro primeiro casos que foram de falência, depois casos de foram convolados em falência pelo art 73
 
-#vamos filtrar casos do artigo 73 pelos incisos:
+#vamos filtrar casos do artigo 73 pelo inciso iii, que fala sobre:
 #iii quando o plano é rejeitado em assembleia geral dos credores
-#ii quando a empresa não apresenta o plano
+
 #a ideia é NÃO pegar casos dos incisos ii e  iv, pois não teve votação da empresa
+#ii quando a empresa não apresenta o plano
+#iv quando a empresa descumpre o PRJ
 hom_art_99_73 <- movs_df %>%
   procura_resume("art(igo|.) 99") %>%
   procura_resume("73, inc(iso|.) iii | 73, iii") %>%
-  arrange(processo, desc(date)) %>% 
+  arrange(processo, date) %>% 
   group_by(processo) %>% 
   slice(1) %>% 
   ungroup()
@@ -791,7 +793,7 @@ hom_nahom <- movs_df %>%
 #assim, eu priorizo os dados nos quais eu tenho mais certeza de estarem corretos
 
 hom <- hom_filtro %>% 
-  bind_rows(hom_homol, hom_art_99_73, hom_homol_regex, hom_nahom) %>% 
+  bind_rows(hom_homol, hom_art_99_73, hom_nahom, hom_homol_regex) %>% 
   group_by(processo) %>% 
   slice(1) %>% 
   ungroup()
@@ -815,58 +817,6 @@ hom <- hom %>%
 
 
 
-```{r testando novas expressoes para homologacao}
-
-pattern_homol2 <- c("conceder a recuperacao judicial") %>% paste(collapse = "|")
-
-
-hom_homol2 <- movs_df %>% 
-  procura_resume(" bem conceder a recuperacao judicial") %>% 
-  arrange(processo, date) %>% 
-  group_by(processo) %>% 
-  slice(1) %>% 
-  ungroup()
-
-check_homol2 <- hom_homol2 %>% 
-  anti_join(hom, by = "processo")
-#não ficou muito bom
-
-pattern_homol3 <- c("homologo\\s*(.*?)\\s* plano de recuperacao") %>% paste(collapse = "|")
-
-padroes_exemplo <- c("homologo, para que surtam seus regulares efeitos, o plano de recuperacao judicial", "homologo o novo plano de recuperacao judicial")
-
-# str_view_all(padroes_exemplo, pattern_homol3)
-
-hom_homol3 <- movs_df %>% 
-  procura_resume(pattern_homol3) %>% 
-  arrange(processo, date) %>% 
-  group_by(processo) %>% 
-  slice(1) %>% 
-  ungroup()
-
-check_homol3 <- hom_homol3 %>% 
-  anti_join(hom, by = "processo")
-
-
-
-hom_homol4 <- movs_df %>% 
-  procura_resume('entendo por bem conceder a recuperacao judicial') %>% 
-  arrange(processo, date) %>% 
-  group_by(processo) %>% 
-  slice(1) %>% 
-  ungroup()
-  
-
-
-
-
-check_homol4 <- hom_homol4 %>% 
-  anti_join(hom, by = "processo")
-
-
-```
-
-
 Juntando os dados de homologação ao nosso banco de dados.
 
 
@@ -882,6 +832,23 @@ datas_rj <- datas_rj %>%
 
 
 ```
+
+```{r checando casos com homologação depois da finalização}
+check_hom_final <- datas_rj %>% 
+  filter(data_final < data_hom)
+
+#1001489-59.2017.8.26.0099 #descartar
+#juiz decreta falência e depois volta atrás na decisão. Além disso, o processo ainda está em andamento
+discard_list <- discard('1001489-59.2017.8.26.0099', 'processo fora das regras da LRF')
+
+#1028638-95.2014.8.26.0564 #descartar
+#empresa faliu antes de votar o plano. O filtro RegEx não ficou muito bom nesse caso também
+discard_list <- discard('1028638-95.2014.8.26.0564', 'empresa faliu antes de votar PRJ')
+
+
+```
+
+
 
 
 ```{r checando casos com homologação NA}
@@ -910,9 +877,9 @@ check_hom_convol2 <- datas_rj %>%
 
 pattern_73 <- c("73, iii | 73, inc(iso|.) iii | 73, ii | 73, inc(iso|.) ii")
 
-datas_rj <- datas_rj %>% 
-  mutate(data_hom = case_when(is.na(data_hom) & str_detect(detalhes_final, pattern_73) ~ data_final,
-                              TRUE ~ data_hom))
+# datas_rj <- datas_rj %>% 
+#   mutate(data_hom = case_when(is.na(data_hom) & str_detect(detalhes_final, pattern_73) ~ data_final,
+#                               TRUE ~ data_hom))
 
 #por fim, uma curiosidade: existem processos que citam artigo 73 inciso iii para convolar em falência mesmo quando já têm data de homologação do plano. Isso é esquisito, mas acontece quando o juiz aprova um plano forçadamente - usando cram down, passando por cima da decisão dos credores -, mas depois convola a rj em falência alegando que o plano não tinha sido aprovado pelos credores
 datas_rj_73 <- datas_rj %>% 
@@ -996,7 +963,6 @@ checagem <- function(x){
 }
 
 
-#checando cada processo que falta data de homologação ####
 
 #o objetivo é identificar em quais casos NÃO podemos usar a data de falência como proxy para homologação
 
@@ -1598,13 +1564,6 @@ Repare que há um número negativo na coluna "Meses entre homologação e final"
 Outro dado interesante é a mediana dos meses entre o requerimento e a homologação. Pelo menos metade dos casos demora mais que 14 meses nesta fase, sendo que idealmente esse prazo não deveria ser superior a 6 meses. Casos com número de meses entre requerimento e homologação altos podem ser de casos que foram abandonados pela empresa que pediu a recuperação.
 
 
-
-```{r checando estatísticas descritivas}
-#casos com finalização antes da homologação
-chec_hom_final <- datas_rj %>% 
-  filter(meses_hom_final < 0 )
-
-```
 
 
 
