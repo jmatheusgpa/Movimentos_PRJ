@@ -1,0 +1,1752 @@
+---
+title: "Projeto Final "
+author: "José Matheus"
+date: "29/05/2020"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(
+	echo = FALSE,
+	message = FALSE,
+	warning = FALSE
+)
+```
+
+
+```{r libraries}
+# install.packages("tidyverse")
+# install.packages("tidytext")
+# install.packages("stargazer")
+# install.packages("ggthemes")
+
+# install.packages("htmlwidgets") 
+library(htmlwidgets) #str_view()
+library(ggthemes)
+
+library(tidyverse)
+
+library(tidytext)
+
+library(stargazer)
+
+library(knitr)
+
+```
+
+
+## Extraindo informações de processos de recuperação judicial
+
+Versão 6, lendo dados de movimentação atualizados pelo professor (03/08/20)
+
+#### 1. Gerar um relatório reproduzível em R
+
+#### 2. Explicar brevemente os objetivos da análise
+
+Queremos usar o R para extrair dados de processos de recuperação judicial. A recuperação judicial é um processo onde a empresa em dificuldades financeiras entra na justiça para renegociar as dívidas com seus credores e obter um prazo maior para pagamento. Caso a maioria dos credores não concorde com o pedido da empresa, aí a recuperação judicial é transformada em falência.
+
+Usaremos estes dados para estimar os efeitos de uma possível reforma da Lei de Falências usando um modelo de barganha, conforme parte do abstract do meu projeto de pesquisa:
+
+>"A reforma da Lei de Falências Brasileira de 2005 teve impactos positivos na oferta de crédito (Araujo et al., 2012) e investimento das firmas (Ponticelli e Alencar, 2016). Contudo, atrasos (Sacramone et al., 2017) e baixas taxas de recuperação (Jupetipe et al., 2017) marcam os procedimentos atuais. Dado esse cenário desmotivador, existe uma discussão de reforma em andamento no Brasil. Esta destina-se a, dentre outras coisas, estimular financiamentos para empresas em recuperação judicial e priorizar as reivindicações fiscais em caso de reorganização das firmas. Nosso objetivo é contribuir para tal discussão ao estimar o modelo estrutural de Dou et al. (2019) para fricções em falências. Em particular, trataremos dos efeitos da reforma sobre excesso de liquidação/reorganização, duração dos acordos e taxas de recuperação. Consequentemente, nosso projeto também contribui para a literatura de desenho ótimo de falências e estimação de jogos não cooperativos."
+
+Para estimar esse modelo, precisamos saber de algumas datas importantes no processo de recuperação judicial:
+
+1) Quando a empresa deu entrada no processo
+2) Quando a empresa teve ou a sua recuperação judicial aprovada (homologação do plano) ou recusada, daí a recuperação é convolada em falência
+3) Quanto tempo demorou, em média, entre as reuniões de credores para decidir o que fazer com a firma.
+
+Neste trabalho vamos extrair os dados 1) e 2). O dado 3) é um pouco mais complicado de conseguir, pretendo fazer depois.
+
+
+Por que usar mineração de dados? O principal motivo é tornar os resultados da pesquisa mais reproduzíveis. Se eu coletasse os dados manualmente (olhando cada movimento de cada processo), seria muito custoso para outra pessoa verificar os resultados da minha pesquisa Contudo, se eu faço isso por meio de códigos, basta verificar os códigos ao invés de centenas de processos.
+
+Outros motivo (não menos importante): fazer a análise assim é muito mais divertido.
+
+A principal desvantagem de usar o R neste caso é que alguns dados podem ser classificados erroneamente. Para isso, preciso pensar em mais testes para verificar a consistência deles.
+
+
+#### 3. Abrir pelo menos um banco de dados externo, ou montar um banco de dados original
+
+Vou montar um banco de dados original a partir dos dados já extraídos da internet fornecidos pelo meu orientador.
+
+Usaremos dados da movimentação de 274 processos de recuperação judicial que eu já havia analisado manualmente antes para determinar quando se encerraram.
+
+Tais dados foram extraídos pelo meu orientador, Dr. Rafael Ferreira, que me enviou para determinar essas datas importantes de cada processo. A base de dados contém as seguintes colunas:
+
+* fullMatch e linkToPdf: são colunas geradas no processo de extração dos dados. Não usaremos aqui.
+
+* date: a data na qual a movimentação (decisão, decreto, ato ordinário, dentre outras) no processo aconteceu
+
+* movimento: qual o tipo de movimento que aconteceu: se foi uma decisão, se foi uma publicação de edital, se foi declarada a falência da empresa, dentre outros
+
+* detalhes: o texto que está na movimentação do caso. É analisando esta coluna que vamos determinar quando aconteceram as principais movimentações.
+
+* id: coluna de identificação usada na extração dos dados. Não usaremos aqui.
+
+* processo: número do processo de recuperação judicial. Cada número de processo é único. Há várias movimentações para cada processo.
+
+
+
+```{r leitura dos dados}
+
+movs_df <- readRDS("movs_resumidos_03082020.RDS")
+
+
+
+#são 272 processos diferentes que já foram finalizados
+movs_df %>%
+  select(processo) %>%
+  distinct() %>%
+  nrow()
+
+
+#deixando tudo em letra minúscula ####
+
+movs_df <- movs_df %>% 
+  mutate(detalhes = tolower(detalhes))
+
+#removendo acentos das palavras. ####
+#Consultei esta função em: https://pt.stackoverflow.com/questions/46473/remover-acentos
+
+rm_acento <- function(str,pattern="all") {
+  # Rotinas e funções úteis V 1.0
+  # rm.accent - REMOVE ACENTOS DE PALAVRAS
+  # Função que tira todos os acentos e pontuações de um vetor de strings.
+  # Parâmetros:
+  # str - vetor de strings que terão seus acentos retirados.
+  # patterns - vetor de strings com um ou mais elementos indicando quais acentos deverão ser retirados.
+  #            Para indicar quais acentos deverão ser retirados, um vetor com os símbolos deverão ser passados.
+  #            Exemplo: pattern = c("´", "^") retirará os acentos agudos e circunflexos apenas.
+  #            Outras palavras aceitas: "all" (retira todos os acentos, que são "´", "`", "^", "~", "¨", "ç")
+  if(!is.character(str))
+    str <- as.character(str)
+  
+  pattern <- unique(pattern)
+  
+  if(any(pattern=="Ç"))
+    pattern[pattern=="Ç"] <- "ç"
+  
+  symbols <- c(
+    acute = "áéíóúÁÉÍÓÚýÝ",
+    grave = "àèìòùÀÈÌÒÙ",
+    circunflex = "âêîôûÂÊÎÔÛ",
+    tilde = "ãõÃÕñÑ",
+    umlaut = "äëïöüÄËÏÖÜÿ",
+    cedil = "çÇ"
+  )
+  
+  nudeSymbols <- c(
+    acute = "aeiouAEIOUyY",
+    grave = "aeiouAEIOU",
+    circunflex = "aeiouAEIOU",
+    tilde = "aoAOnN",
+    umlaut = "aeiouAEIOUy",
+    cedil = "cC"
+  )
+  
+  accentTypes <- c("´","`","^","~","¨","ç")
+  
+  if(any(c("all","al","a","todos","t","to","tod","todo")%in%pattern)) # opcao retirar todos
+    return(chartr(paste(symbols, collapse=""), paste(nudeSymbols, collapse=""), str))
+  
+  for(i in which(accentTypes%in%pattern))
+    str <- chartr(symbols[i],nudeSymbols[i], str)
+  
+  return(str)
+}
+
+
+movs_df <- movs_df %>% 
+  mutate(detalhes = rm_acento(detalhes))
+
+
+#agora todos os dados estão na forma minúscula e sem acentuação
+#exemplo1: "Assembléia" virou "assembleia"
+#exemplo2: "Recuperação" virou recuperacao
+
+
+#criando a variável chave de cada observação na coluna id_linha 
+# É apenas um número dizendo qual a linha no banco de dados original
+
+movs_df <- movs_df %>% 
+  mutate(id_linha = seq(n()))
+
+
+#ajustando o  formato de data para facilitar contas adiante
+movs_df <- movs_df %>% 
+  mutate(date = as.Date(date, format="%Y-%m-%d"))
+
+         
+```
+
+
+
+#### 4. Manipular, transformar e limpar os dados para atender os objetivos
+
+
+
+```{r dificuldades}
+
+numero_movimentos <- movs_df %>% 
+  distinct(movimento) %>% 
+  nrow()
+
+descr_movimentos <- movs_df %>% 
+  distinct(movimento) %>% pull() %>% sort()
+
+
+#quais são os movimentos que contém "falência"?
+# descr_movimentos[str_detect(descr_movimentos, "(f|F)alência")]
+
+
+mov_concedida <- movs_df %>% 
+  filter(movimento == "Concedida a recuperação judicial")
+```
+
+##### Dificuldades 
+
+A principal dificuldade é que esses dados não foram feitos para serem usados em pesquisas acadêmicas. Prova disso é que as movimentações dos processos não têm um padrão. Por exemplo, há `r numero_movimentos`  textos possíveis para classificar a movimentação ocorrida. Isto dificulta sabermos as datas de movimentações importantes dos processos. 
+
+
+Outro exemplo, se filtrarmos para o movimento "Concedida a recuperação judicial", teremos apenas `r mov_concedida %>% nrow()` observações, quando na verdade boa parte dos `r movs_df %>% distinct(processo) %>% nrow()` processos analisados deveria ter um movimento desses.
+
+Diante disso, podemos procurar expressões que facilitem a nossa procura pelas datas-chave dos processos.
+
+##### Método usado no projeto
+
+O método que usei nesse projeto foi:
+
+1) filtrar os casos que já tinham a classificação correta, por exemplo, "Concedida a recuperação judicial"
+
+2) analisar os textos dos casos encontrados procurando expressões que os juízes usassem sempre
+    + a maior parte dessa análise foi manual, lendo os processos mesmo
+    + tentei tokenizar os textos e até procurar as palavras mais distintas entre as movimentações. Contudo, não achei os resultados disso tão úteis (deixei o código em rascunho, caso queira verificar)
+    
+3) busquei as expressões encontradas em 2) e verifiquei se tinham alguma inconsistência óbvia
+  
+4) organizei a data de cada evento para os processos nos quais encontrei dados
+
+```{r funções}
+
+#função para dizer se um processo possui um padrão de texto que eu procurei
+procura <- function(dados, padrao){
+  
+  
+  #dados é uma base de dados que contenha uma coluna com texto chamada "detalhes"
+  #padrao é o texto que buscamos
+  
+  filter(dados, str_detect(string = tolower(detalhes),
+                       pattern = padrao))
+  
+}
+
+
+#função para dizer se um processo NÂO possui um padrão de texto que eu procurei
+procura_nao <- function(dados, padrao){
+  
+  
+  #dados é uma base de dados que contenha uma coluna com texto chamada "detalhes"
+  #padrao é o texto que buscamos
+  
+  filter(dados, !(str_detect(string = tolower(detalhes),
+                       pattern = padrao)))
+  
+}
+
+#função para resumir os textos encontrados
+resumo <- function(dados, numero, string){
+  
+  #vamos repartir o string de detalhes usando str_sub
+  #start é um pouco antes de a primeira vez que o string apareceu
+  #end é um pouco depois que o string apareceu
+  #assim, o string procurando fica bem no meio do texto
+  start <- dados$detalhes[numero] %>% str_locate(string)
+  start <- max(0, start[[1]]-400)
+  
+  end <- start + 800
+  
+  return(str_sub(dados$detalhes[numero], start, end))
+  
+}
+
+
+
+
+#função para resumir os textos encontrados, em forma vetorial
+resumo_vetor <- function(dados, string){
+  
+  #vamos repartir o string de detalhes usando str_sub
+  #start é um pouco antes de a primeira vez que o string apareceu
+  #end é um pouco depois que o string apareceu
+  #assim, o string procurando fica bem no meio do texto
+  start <- dados$detalhes %>% str_locate(string)
+  start <- start[,1]
+  
+  end <- str_length(dados$detalhes)
+  
+  return(str_sub(dados$detalhes, start, end))
+  
+}
+
+
+
+#função para procurar padrão e já resumir os dados encontrados em uma nova coluna chamada "detalhes_resumo"
+procura_resume <- function(data, string){
+  
+  #procura o padrão e cria uma nova coluna com o resumo 
+  #o resumo é baseado no padrão
+  
+  data %>% 
+  procura(string) %>% 
+  mutate(detalhes_resumo = resumo_vetor(., string))
+  
+  
+  
+}
+
+#função para ler texto da coluna "detalhes" procurando por id_linha
+
+detalhes_id_linha <- function(x){
+  
+  movs_df %>% filter(id_linha == x) %>% pull(detalhes)
+}
+
+
+discard_list <- data.frame('processo' = character(0), 'motivo_discard' = character(0))
+
+
+discard <- function(x, y){
+  #adiciona novos processos e o motivo de descartá-los à lista
+  x = as.character(x)
+  y = as.character(y)
+  
+  
+  discard_list <- rbind(discard_list, data.frame('processo' = x, 'motivo_discard' = y))
+  
+}
+
+```
+
+
+##### Data inicial
+A data inicial de cada procedimento de recuperação inicial será a data de quando a empresa fez o requerimento da recuperação judicial. A nossa proxy para isso é a data da primeira movimentação oficial no caso, usualmente a data de distribuição do processo.
+
+
+```{r primeira movimentação}
+#vamos extrair a data da primeira movimentação de cada processo
+#essa é nossa proxy para a data de requerimento de RJ
+
+
+primeira_mov <- movs_df %>% 
+  arrange(processo, date) %>% 
+  group_by(processo) %>% 
+  slice(1) %>% 
+  ungroup()
+
+
+#vamos construir a lista de todos os processos,servirá para checar o dado de quantos processos nós conseguimos
+lista_processos <- primeira_mov %>% 
+  distinct(processo) %>% 
+  arrange(processo)
+
+
+#a partir de agora, procuraremos as outras datas relevantes e vamos fazer left_join na tabela datas_rj
+#não precisaremos mais dos casos onde não há links para pdf, então vamos filtrar
+movs_df_completo <- movs_df
+
+
+# movs_df <- movs_df %>%
+#   filter(str_detect(linkToPdf, ""))
+# 
+# #excluindo colunas desnecessárias
+# movs_df <- movs_df %>% 
+#   select(-c('fullMatch', 'linkToPdf', 'id'))
+
+
+
+  
+
+#vamos remover também as movimentações que são do tipo Edital, pois estas contém textos de decisões passadas
+
+#pega todos os movimentos que começam com "Edital"
+filtro_edital <-  descr_movimentos[str_detect(descr_movimentos, "^(E|e)dital")]
+
+movs_df <- movs_df %>% 
+  filter(!(movimento %in% filtro_edital))
+
+
+
+#movimentos sem linkToPdf de novo
+movs_df_resumido <- movs_df %>% 
+  filter(str_detect(linkToPdf, "")) %>% 
+  select(-c('fullMatch', 'linkToPdf', 'id'))
+```
+
+
+
+
+##### Datas de finalização do processo de recuperação judicial
+
+As últimas datas que procurei foram as de encerramento do processo de recuperação judicial (RJ). O destino final de uma RJ ou é encerramento da recuperação (empresa se recuperou) ou é falência.
+
+Pesquisamos essas datas antes das datas de aprovação/rejeição do plano porque alguns processos de recuperação judicial são convertidos em falência por rejeição do plano de recuperação em assembleia geral de credores. Nestes casos, a data de rejeição do plano é a mesma data da decretação da falência.
+
+
+
+
+```{r finalização da RJ}
+#o destino final de uma RJ ou é encerramento da recuperação (empresa se recuperou) ou é falência
+#faremos duas bases diferentes porque queremos diferenciar estes dois casos
+#depois a gente junta essas bases 
+
+#neste bloco nós usaremos movs_df_completo, pois tem algumas decisões de encerramento que não possuem link para pdf
+
+#o filtro para encerramento da recuperação judicial funcionou muito bem,
+#ao todo são 66 casos de recuperação, já analisei isto manualmente antes.
+
+enc_filtro <- movs_df_completo %>% 
+  filter(movimento == "Decretação do Encerramento da Recuperação Judicial") %>% 
+  arrange(processo, date) %>% 
+  group_by(processo) %>% 
+  slice(1) %>% 
+  ungroup()
+
+
+
+#uma expressão que vi bastante foi "decreto o encerramento da recuperacao judicial"
+#adicionei também "declaro encerrada a recuperacao judicial"
+pattern_enc <- c("decreto o encerramento da recuperacao judicial", "declaro encerrada a recuperacao judicial") %>% paste(collapse = "|")
+
+
+
+enc_decreto <- movs_df_completo %>% 
+  procura_resume(pattern_enc) %>% 
+  arrange(processo, date) %>% 
+  group_by(processo) %>% 
+  slice(1) %>% 
+  ungroup()
+
+
+#o artigo 63 fala quando o juiz pode decretar o encerramento da RJ
+# pattern_art63 <- c("artigo 63",
+#                     "art. 63") %>% paste(collapse = "|")
+# 
+# 
+# enc_art63 <- movs_df_completo %>% 
+#   procura_resume(pattern_art63) %>% 
+#   procura("administrado(r|ra)") %>% 
+#   procura_resume("saldo") %>% 
+#   arrange(processo, date) %>% 
+#   group_by(processo) %>% 
+#   slice(1) %>% 
+#   ungroup()
+
+
+#expressões específicas observadas nos processos sem data de finalização da primeira versão do trabalho
+
+pattern_nafinal_enc <- c('vem a conclusao com requerimento da administradora judicial para encerramento, por forca do cumprimento das obrigacoes vencidas', 'decretacao, por sentenca, do encerramento da recuperacao judicial') %>% paste(collapse = "|")
+
+enc_nafinal <- movs_df_completo %>% 
+  procura_resume(pattern_nafinal_enc) %>% 
+  arrange(processo,date) %>% 
+  group_by(processo) %>% 
+  slice(1) %>% 
+  ungroup()
+
+
+
+#juntando as bases de dados sobre encerramento e removendo duplicatas
+enc <- enc_filtro %>% 
+  bind_rows(enc_decreto, enc_nafinal) %>% 
+  arrange(processo, date) %>% 
+  group_by(processo) %>% 
+  slice(1) %>% 
+  ungroup()
+
+#preparando os dados para bind
+enc <- enc %>% 
+  mutate(resultado = "encerrou RJ com êxito") %>% 
+  select(processo, date, resultado, detalhes, detalhes_resumo, id_linha)
+
+
+
+#filtro para movimentos classificados como falência
+
+filtro_falencia <- c("Decretação de falência","Decretada a Falência - Sentença Completa", "Decretada a Falência - Sentença Resumida")
+
+dec_filtro <- movs_df_completo %>% 
+  filter(movimento %in% filtro_falencia) %>% 
+  arrange(processo, date) %>% 
+  group_by(processo) %>% 
+  slice(1) %>% 
+  ungroup()
+
+
+#uma expressao que aparece bastante é "decreto a falencia".
+#também há casos em que o ministério público decreta a falência e em seguida o juiz se refere a ele dizendo que este "decretou a falencia"
+#também existe a opção de o juiz falar "convolo a recuperacao judicial em falência"
+
+dec_falencia <- movs_df_completo %>% 
+  procura_resume("decret(o|ou) a falencia| convolo a recuperacao judicial em falencia| defiro o pedido de convolacao da recuperacao judicial em falencia") %>% 
+  arrange(processo, date) %>% 
+  group_by(processo) %>% 
+  slice(1) %>% 
+  ungroup()
+
+#tentei pegar tudo "defiro (...) convolacao" caso o juiz fale 'defiro a convolação", mas só tem uma obs
+# teste <- "defiro o pedido de convolacao da recuperacao judicial em falencia"
+# 
+# 
+# dec_falencia2 <- movs_df_completo %>%
+#   procura_resume("decreto \\s*(.*?)\\s*a falencia") %>%
+#   arrange(processo, date) %>%
+#   group_by(processo) %>%
+#   slice(1) %>%
+#   ungroup()
+
+
+
+#artigo 99
+
+#ao invés de decreto, convolo, etc, procurar "falida" ajuda a separar os casos que foram falencia mesmo
+#o juiz sempre manda suspender ações de cobrança contra a "falida"
+dec_art99 <- movs_df_completo %>% 
+  procura_resume("art(igo|.) 99") %>%
+  # filter(!str_detect(detalhes, "decreto | convolo")) %>% 
+  procura_resume("falida") %>%
+  # procura_resume("decreto | decretou | convol(o|ou) | convolar") %>%
+  arrange(processo, date) %>% 
+  group_by(processo) %>% 
+  slice(1) %>% 
+  ungroup()
+
+
+#expressões específicas ao analisar casos sem data de finalização da primeira versão do trabalho
+pattern_nafinal_dec <- c('a recuperanda teve sua quebra decretada por este juizo') %>% paste(collapse = '|')
+
+dec_nafinal <- movs_df_completo %>% 
+  procura_resume(pattern_nafinal_dec) %>% 
+  arrange(processo,date) %>% 
+  group_by(processo) %>% 
+  slice(1) %>% 
+  ungroup()
+
+#juntando os filtros
+dec <- dec_filtro %>% 
+  bind_rows(dec_art99, dec_falencia,dec_nafinal) %>% 
+  arrange(processo, date) %>% 
+  group_by(processo) %>% 
+  slice(1) %>% 
+  ungroup()
+
+
+#preparando os dados para o bind
+dec <- dec %>% 
+  mutate(resultado = "falência") %>% 
+  select(processo, date, resultado, detalhes, detalhes_resumo, id_linha)
+
+
+final <- enc %>% 
+  bind_rows(dec) %>% 
+  rename(data_final = date,
+         detalhes_final = detalhes,
+         detalhes_final_resumo = detalhes_resumo,
+         id_linha_final = id_linha)
+
+
+#checando se há dados duplicados
+# final_duplicado <- final %>% 
+#   group_by(processo) %>% 
+#   tally() %>% 
+#   filter(n>1) %>% pull(processo)
+# 
+# #haviam aparecido 5 casos duplicados, vou olhar um a um
+# 
+# final %>% 
+#   arrange(processo) %>% 
+#   filter(processo == final_duplicado[2])
+# 
+# enc %>% filter(processo == final_duplicado[2]) %>% pull(detalhes)
+# dec %>% filter(processo == final_duplicado[2]) %>% pull(detalhes)
+#olhei os casos e realmente é confuso. Nesse caso, por exemplo, existe uma decisão na qual o juiz decreta o encerramento da RJ e depois outra decisão na qual ele mantém a decisão de convolar a RJ em falência
+
+#nestes casos, acho que o mais prudente é usar a última decisão, pois pelo visto acontece o revertimento de um encerramento de recuperação judicial em uma falência. Então se pegarmos a última data, não teremos esse problema.
+
+#teste
+# final %>%
+#   arrange(processo, data_final) %>%
+#   filter(processo == final_duplicado[2]) %>%
+#   slice(-1)
+
+
+#pegando só a última data neste caso. Ordenei a data de maneira decrescente
+final <- final %>% 
+  arrange(processo, desc(data_final)) %>%
+  group_by(processo) %>% 
+  slice(1)
+
+```
+
+
+
+
+
+Criaremos um banco de dados juntando as informações coletadas até agora.
+
+
+```{r datas_rj - adicionando data de finalização}
+
+#vamos construir a tabela com todos os números de processo e a data de requerimento da RJ
+#datas_rj ####
+datas_rj <- primeira_mov %>% 
+  select(processo, date) %>% 
+  rename(data_requerimento = date)
+
+#incorporando data final do processo ####
+datas_rj <- datas_rj %>% 
+  left_join(final, by = "processo")
+
+
+
+
+```
+
+Checagem dos processos para os quais não conseguimos encontrar datas de finalização usando RegEx.
+
+
+```{r processos sem data de finalização}
+
+na_final <- datas_rj %>% 
+  filter(is.na(data_final)) %>% 
+  distinct(processo) %>% 
+  left_join(movs_df)
+
+na_final_lista <- datas_rj %>% 
+  filter(is.na(data_final)) %>% 
+  distinct(processo)
+
+
+#detalhes sobre os 7 casos sem data de finalização: 3 têm expressões específicas demais, 3 casos não foram encerrados e 1 caso de autofalência
+
+#0008645-88.2012.8.26.0100 #tabulado
+#4081: presente recuperacao judicial fora encerrada por sentença transitada em julgado
+#4081
+#4049 :movimento de baixa definitiva com encerramento do bienio
+#4042: decretação, por sentença, do encerramento da recuperacao judicial
+
+#0024997-87.2013.8.26.0100 #descartar
+#comentários sobre carta de arrematação, mas tá esquisito
+#chequei as movimentações virtuais e não achei decisão de encerramento/falência. Caso está em andamento, foi erro no input
+
+discard_list <- discard('0024997-87.2013.8.26.0100', 'Caso está em andamento, foi erro no input')
+
+#0133085-64.2009.8.26.0100 #tabulado
+#173769: teve sua quebra decretada por este juízo
+#decretação de falência não está digitalizada, aconteceu no dia 25/04/2018. Página 1858 do pdf do auto
+#a data de decretação de falência que constará é de dezembro de 2018. Vou deixar assim porque a data em si não importa para o trabalho
+
+
+#1008112-48.2015.8.26.0152 #descartar
+#ainda estava em andamento em 2019. A recuperação foi encerrada com êxito em junho de 2020. Vou descartar pois pode ter efeito do covid
+discard_list <- discard('1008112-48.2015.8.26.0152', 'ainda estava em andamento em 2019')
+
+
+
+#1012203-08.2016.8.26.0554 #descartar
+#empresa faliu antes de ter o plano homologado. Foi autofalência. Página 484
+discard_list <- discard('1012203-08.2016.8.26.0554', 'empresa faliu antes de ter o plano homologado')
+
+
+#1023746-04.2015.8.26.0114 #descartar
+#acho que ainda está em andamento também
+discard_list <- discard('1023746-04.2015.8.26.0114', 'ainda está em andamento ')
+
+
+#1025824-13.2015.8.26.0100 #descartar
+#ainda está em andamento
+#AJ pediu para encerrar a recuperação, credores discordaram e não tem movimento de encerramento até hoje
+discard_list <- discard('1025824-13.2015.8.26.0100', 'ainda está em andamento ')
+
+
+#0017709-93.2010.8.26.0100 #tabulado
+#ESAJ não publicou a decretação de falência
+#a data do processo é de quando o juiz pede para publicar o edital do artigo 99, que teoricamente era para ser a data da falência
+
+
+
+```
+
+
+
+
+##### Data de aprovação/rejeição do plano
+
+A outra etapa importante é a data quando o plano de recuperação judicial é aprovado ou rejeitado. Para o plano ser aprovado, 1) ou ele não deve ter sofrido objeção dos credores ou 2 ele pode ter sofrido objeção, mas ter sido aprovado pela maioria dos credores em assembleia geral. Se o plano for rejeitado, a recuperação judicial é transformada em falência (o termo técnico "convolada em falência") 
+
+
+No caso da aprovação (homologação) do plano, identifiquei que os juízes usualmente falam "concedo a recuperação judicial" em suas decisões. Fiz um filtro baseado nesse critério. Aprovação, homologação do plano e concessão da recuperação judicial são sinônimos no contexto desse projeto.
+
+Um problema que acontece é que às vezes um documento cita trechos de decisões anteriores. Então se buscarmos "concedo a recuperação judicial", apareceria mais de uma movimentação para alguns processos. A primeira é a data da aprovação do plano de fato, enquanto a segunda movimentação apenas cita a primeira. A solução para isso foi filtrar apenas as primeiras movimentações encontradas para cada processo.
+
+
+
+```{r homologação}
+
+
+#primeiro, vamos tentar filtrar pela movimentação para ver quantos casos existem
+hom_filtro <- movs_df %>% 
+  filter(movimento == "Concedida a recuperação judicial")
+
+
+
+#analisando os textos manualmente, vemos que as expressões "concedo a recuperação judicial", "o plano deve ser homologado" e "homologacao do plano de recuperão judicial aprovado" são comuns. (Tentei filtrar palavras-chave assim fazendo a tokenização do texto, mas não funcionou tanto quanto eu gostaria)
+
+pattern_homol <- c("concedo a recuperacao judicial", "o plano deve ser homologado","o plano de recuperacao judicial deve ser homologado", "homologo o plano", "fica homologada a recuperacao judicial","fica homologado o plano de recuperacao judicial","o plano de recuperacao deve ser homologado", "concedo recuperacao judicial") %>% paste(collapse = "|")
+
+
+
+hom_homol <- movs_df %>% 
+  procura_resume(pattern_homol) %>% 
+  arrange(processo, date) %>% 
+  group_by(processo) %>% 
+  slice(1) %>% 
+  ungroup()
+
+
+#outras expressões que encontrei com frequência foram: 'homologo (...) plano de recuperacao'. 
+#Ex: "homologo, para que surtam seus regulares efeitos, o plano de recuperacao judicial"
+#criando um novo filtro para isso
+
+hom_homol_regex <- movs_df %>% 
+  procura_resume("homologo\\s*(.*?)\\s* plano de recuperacao") %>% 
+  arrange(processo, date) %>% 
+  group_by(processo) %>% 
+  slice(1) %>% 
+  ungroup()
+
+
+#vou colocar mais um filtro, usando artigo 73 (hipóteses para convolação em falência), junto do artigo 99 (sentença de decretação de falência).
+
+#filtro primeiro casos que foram de falência, depois casos de foram convolados em falência pelo art 73
+
+#vamos filtrar casos do artigo 73 pelos incisos:
+#iii quando o plano é rejeitado em assembleia geral dos credores
+#ii quando a empresa não apresenta o plano
+#a ideia é NÃO pegar casos dos incisos ii e  iv, pois não teve votação da empresa
+hom_art_99_73 <- movs_df %>%
+  procura_resume("art(igo|.) 99") %>%
+  procura_resume("73, inc(iso|.) iii | 73, iii") %>%
+  arrange(processo, desc(date)) %>% 
+  group_by(processo) %>% 
+  slice(1) %>% 
+  ungroup()
+
+#inciso ii devem ser descartados
+discard_art_73 <- movs_df %>%
+  procura_resume("art(igo|.) 99") %>%
+  procura_resume("73, inc(iso|.) ii |  73, ii") %>%
+  arrange(processo, desc(date)) %>% 
+  group_by(processo) %>% 
+  slice(1) %>% 
+  ungroup() %>% 
+  select(processo)
+
+#adicionando os artigos do artigo 73,ii), à lista de descarte
+for(i in 1:length(discard_art_73$processo)){
+  discard_list <- discard(discard_art_73$processo[i], 'empresa faliu antes de votar PRJ')
+}
+
+
+
+#aparentemente alguns casos do artigo 73, inciso iv foram declarados erroneamente pelo juiz
+#queremos os casos do artigo 73, inciso iv, nos quais a empresa faliu antes de ter o plano homologado
+hom_art_99_73iv <- movs_df %>%
+  procura_resume("art(igo|.) 99") %>%
+  procura_resume("73, inc(iso|.) iv | 73, iv") %>%
+  arrange(processo, desc(date)) %>% 
+  group_by(processo) %>% 
+  slice(1) %>% 
+  ungroup()
+
+
+
+#expressões específicadas encontradas analisando manualmente os processos que ficaram sem data de homologação na primeira versão do trabalho
+
+pattern_nahom <- c('ciencia a todos os interessados sobre o plano aprovado', 'entendo por bem conceder a recuperacao judicial') %>% paste(collapse = "|")
+
+hom_nahom <- movs_df %>% 
+  procura_resume(pattern_nahom) %>% 
+  arrange(processo, date) %>% 
+  group_by(processo) %>% 
+  slice(1) %>% 
+  ungroup()
+
+
+
+#juntando as bases de dados sobre homologação e removendo dados duplicados
+#neste caso, vão ficar os dados das primeiras bases que eu colocar
+#assim, eu priorizo os dados nos quais eu tenho mais certeza de estarem corretos
+
+hom <- hom_filtro %>% 
+  bind_rows(hom_homol, hom_art_99_73, hom_homol_regex, hom_nahom) %>% 
+  group_by(processo) %>% 
+  slice(1) %>% 
+  ungroup()
+
+hom <- hom %>% 
+  select(processo, date, detalhes, detalhes_resumo, id_linha) %>% 
+  rename(data_hom = date,
+         detalhes_hom = detalhes,
+         detalhes_hom_resumo = detalhes_resumo,
+         id_linha_hom = id_linha)
+
+
+
+
+#achei melhor não usar artigos 57 ou 58 ou 61, eles davam muitos falsos positivos
+
+
+
+```
+
+
+
+
+```{r testando novas expressoes para homologacao}
+
+pattern_homol2 <- c("conceder a recuperacao judicial") %>% paste(collapse = "|")
+
+
+hom_homol2 <- movs_df %>% 
+  procura_resume(" bem conceder a recuperacao judicial") %>% 
+  arrange(processo, date) %>% 
+  group_by(processo) %>% 
+  slice(1) %>% 
+  ungroup()
+
+check_homol2 <- hom_homol2 %>% 
+  anti_join(hom, by = "processo")
+#não ficou muito bom
+
+pattern_homol3 <- c("homologo\\s*(.*?)\\s* plano de recuperacao") %>% paste(collapse = "|")
+
+padroes_exemplo <- c("homologo, para que surtam seus regulares efeitos, o plano de recuperacao judicial", "homologo o novo plano de recuperacao judicial")
+
+# str_view_all(padroes_exemplo, pattern_homol3)
+
+hom_homol3 <- movs_df %>% 
+  procura_resume(pattern_homol3) %>% 
+  arrange(processo, date) %>% 
+  group_by(processo) %>% 
+  slice(1) %>% 
+  ungroup()
+
+check_homol3 <- hom_homol3 %>% 
+  anti_join(hom, by = "processo")
+
+
+
+hom_homol4 <- movs_df %>% 
+  procura_resume('entendo por bem conceder a recuperacao judicial') %>% 
+  arrange(processo, date) %>% 
+  group_by(processo) %>% 
+  slice(1) %>% 
+  ungroup()
+  
+
+
+
+
+check_homol4 <- hom_homol4 %>% 
+  anti_join(hom, by = "processo")
+
+
+```
+
+
+Juntando os dados de homologação ao nosso banco de dados.
+
+
+
+
+```{r datas_rj - adicionando data de  homologação}
+
+#incorporando datas de homologação #### 
+datas_rj <- datas_rj %>% 
+  left_join(hom, by = "processo")
+
+
+
+
+```
+
+
+```{r checando casos com homologação NA}
+
+#às vezes o plano de recuperação judicial não é homologado.
+#pode ser que ele seja reprovado pelos credores, daí o juiz transforma (convola) a recuperação judicial em falência
+#vou verificar se isso aconteceu com parte dos casos anteriores
+
+
+
+#o juiz convola a RJ em falência a pedido dos credores usando o inciso iii do artigo 73
+check_hom_convol <- datas_rj %>% 
+  filter(is.na(data_hom)) %>% 
+  rename(detalhes = detalhes_final) %>% #para eu poder usar a função procura()
+  procura_resume("73, iii, | 73, inc. iii, | 73, inciso iii,")
+
+#o juiz convola a RJ em falência quando usa o inciso ii quando a empresa não apresenta plano de recuperação 
+check_hom_convol2 <- datas_rj %>% 
+  filter(is.na(data_hom)) %>% 
+  rename(detalhes = detalhes_final) %>% #para eu poder usar a função procura()
+  procura_resume("73, ii, | 73, inc. ii, | 73, inciso ii,")
+
+#nos dois casos acima, a "data de homologacao" passa a ser a data de encerramento da RJ
+#vamos incorporar isso usando case_when()
+
+
+pattern_73 <- c("73, iii | 73, inc(iso|.) iii | 73, ii | 73, inc(iso|.) ii")
+
+datas_rj <- datas_rj %>% 
+  mutate(data_hom = case_when(is.na(data_hom) & str_detect(detalhes_final, pattern_73) ~ data_final,
+                              TRUE ~ data_hom))
+
+#por fim, uma curiosidade: existem processos que citam artigo 73 inciso iii para convolar em falência mesmo quando já têm data de homologação do plano. Isso é esquisito, mas acontece quando o juiz aprova um plano forçadamente - usando cram down, passando por cima da decisão dos credores -, mas depois convola a rj em falência alegando que o plano não tinha sido aprovado pelos credores
+datas_rj_73 <- datas_rj %>% 
+  rename(detalhes = detalhes_final) %>% 
+  procura_resume("73, iii, | 73, inc. iii, | 73, inciso iii,")
+
+
+
+
+```
+
+
+
+
+
+
+
+
+
+```{r conferindo dados do input_manual}
+
+input_manual <- readRDS('outcomes_ze_matheus.RDS')
+
+
+#checando processos que parecem estar em andamento
+
+
+#1008112-48.2015.8.26.0152
+#1023746-04.2015.8.26.0114
+#1025824-13.2015.8.26.0100
+
+#os três ainda estão em andamento, vou excluir da análise.
+
+
+
+```
+
+
+
+
+```{r processos sem data de homologação ou rejeição do plano parte 1 de 2}
+#parte 1 são os casos que resultaram em falência
+
+
+na_hom <- datas_rj %>% 
+  filter(is.na(data_hom)) %>% 
+  distinct(processo) %>% 
+  left_join(movs_df)
+
+na_hom_lista <- datas_rj %>% 
+  filter(is.na(data_hom)) %>% 
+  distinct(processo) 
+
+#filtro na base datas_rj para ver se aproveito texto dos casos que tiveram encerramento
+na_hom_datasrj <- datas_rj %>% 
+  filter(is.na(data_hom)) 
+
+
+
+
+#dados de falências sem data de homologação.
+#pode ser que a data de falência seja a data de rejeição do plano
+na_hom_fal <- na_hom_datasrj %>% 
+  filter(resultado == 'falência') %>% 
+  select(-c(3:6))
+
+na_hom_fal_lista <- na_hom_datasrj %>% 
+  filter(resultado == 'falência') %>% 
+  select(processo) %>% 
+  distinct()
+
+
+checagem <- function(x){
+#checa quais movimentações do processo x possuem as palavras-chave inseridas em 'procura_resume'  
+  check <- movs_df %>%
+  filter(processo == x) %>% 
+  procura_resume("plano | aprov | rejeit| homolog | assembleia | art(.|igo) 58")
+  
+  view(check)
+  
+}
+
+
+#checando cada processo que falta data de homologação ####
+
+#o objetivo é identificar em quais casos NÃO podemos usar a data de falência como proxy para homologação
+
+#padrão é:
+##processo
+##id_linha1
+##comentário id_linha1
+##id_linha2
+##comentário id_linha2
+
+#tabulado significa que coletei a data de homologação após ajustar o código regex
+
+
+#1012203-08.2016.8.26.0554 #descartar
+#único processo que não tem data de homologação nem de finalização. Empresa faliu antes de ter processo homologado
+
+
+#0001920-16.2010.8.26.0048 #tem homologação #tabulado
+#169834
+#autorizo a recuperacao judicial de droga farma > deferimento da rj
+#170073
+#homologo o plano aprovado em assembleia de credores
+
+
+#0000547-55.2014.8.26.0291 #tem homologação #tabulado
+#225
+#homologo, para que produza todos os efeitos de direito, o plano de recuperacao judicial substitutivo
+
+
+#0013275-91.2008.8.26.0048 #tem homologação #tabulado
+#160947
+#entendo por bem conceder a recuperacao judicial
+
+
+#0013945-42.2012.8.26.0161 #descartar
+# detalhes_id_linha(179965)
+#julgo procedente o pedido de convolacao da recuperacao judicial e decreto a falencia de \"andiaco laminados ltda.\", com fulcro no artigo 73
+#empresa faliu antes de votar PRJ
+discard_list <- discard('0013945-42.2012.8.26.0161', 'empresa faliu antes de votar PRJ')
+
+
+
+#0033994-59.2013.8.26.0100 #descartar
+#detalhes_id_linha(172880
+#a convolacao da recuperacao judicial em falencia, objeto dos artigos 61, § 1º e 73, iv, ambos da lei n. 11.101/05. posto isso, nos termos do art. 73, inc. iv, da lei nº 11.101/05, convolo em falencia a recuperacao judicial da empresa pointh display materiais promocionais ltda.
+## empresa que faliu antes de aprovar o plano de recuperação judicial
+## como separar casos de falência do inciso iv quando a firma ainda não homologou plano?
+discard_list <- discard('0033994-59.2013.8.26.0100', 'empresa faliu antes de votar PRJ')
+
+#RD
+
+#0036024-03.2012.8.26.0068 #rejeição do plano
+# detalhes_id_linha(19102)
+#conforme ja determinado na sentenca de convolacao em falencia. fls. 2248/2249: providencie a administradora judicial a instauracao de incidente para analise dos balancos, devendo a falida apresentar esclarecimentos no referido incidente, a fim de se evitar tumulto procedimental.
+#o art. 45, §1º da lrf
+#pg 1815 foi decretada falência, em 14 de agosto de 2015
+
+
+
+
+
+#0036903-79.2010.8.26.0100 #descartar
+#161961
+#ate a presente data nao foi realizada a assembleia geral de credores ... decreto hoje, as 17 horas, nos termos dos artigos 61, § 1º e 73, iv, ambos da lei n. 11.101/05, a falencia da empresa
+discard_list <- discard('0036903-79.2010.8.26.0100', 'empresa faliu antes de votar PRJ')
+
+
+#0039066-27.2013.8.26.0100 #descartar
+# 169021
+#sem que ate o momento tenha sido convocada a assembleia geral de credores ... pelo exposto, com fundamento no art. 73, paragrago unico, c/c o art. 94, iii, \"f\", da lei 11.101/2005, convolo a recuperacao em falencia
+
+
+#0043432-80.2011.8.26.0100 #descartar
+#27600
+#a recuperanda apresentou seu plano de recuperacao judicial, entretanto, nao atendeu as intimacoes judiciais para que procedesse a publicacao do edital de aviso de entrega do plano de recuperacao judicial ...  decreto hoje, as 17 horas, nos termos dos artigos 61, § 1º e 73, iv, ambos da lei n. 11.101/05, a falencia
+discard_list <- discard('0043432-80.2011.8.26.0100', 'empresa faliu antes de votar PRJ')
+
+#0047431-70.2013.8.26.0100 #tem homologação #descartar
+#170806
+#o plano foi aprovado em assembleia geral de credores e a recuperacao foi concedida
+#não encontrei data de homologação, só tem data de acordo com o BB
+#olhei o processo duas vezes e não achei decisão que homologasse o plano. Podemos usar falência como data de rejeição
+discard_list <- discard('0047431-70.2013.8.26.0100', 'autofalência')
+
+
+#0107606-06.2008.8.26.0100 #tem homologação #tabulado
+#159906
+#que nao existe razao alguma para qualquer providencia contraria ao que foi deliberado no plano de recuperacao aprovado
+#obs: plano foi aprovado antes, não achei a data
+
+
+
+#0142466-33.2008.8.26.0100 #tem homologação #tabulado
+#encerrou a RJ com êxito
+#35144
+#concedida a recuperacao judicial em 29/06/2009 ... desse modo, observada a aprovacao pelos credores, homologo as alteracoes do plano de recuperacao judicial da instrucom comercio de produtos cientificos ltda, nos termos da 2ª assembleia geral de credores realizada em 30/11/2010, nos termos das atas respectivas (fls. 616/623), que passam a fazer parte do plano ja aprovado
+#acho que uma expressão regex pode captar 'homologo ... plano de recuperacao'
+
+
+#tem um erro no filtro porque não pega os dados que estão sem link para pdf
+#na verdade teve um plano homologado em 29/06/2009, cuja movimentação não tem link para pdf
+#35061 (30/09: já coletei esse dado mais recente)
+
+#0151873-29.2009.8.26.0100 #tem homologação #tabulado
+#36717
+#homologo o novo plano de recuperacao judicial
+
+
+
+# 1000073-74.2014.8.26.0224 #rejeição
+# plano foi rejeitado por uma classe e juiz preferiu convolar em falência
+
+
+
+# 1000186-82.2016.8.26.0539 #rejeição
+# plano rejeitado
+
+# 1000414-47.2016.8.26.0219 #descartar
+# não chegou a votar o plano
+discard_list <- discard('1000414-47.2016.8.26.0219', 'empresa faliu antes de votar PRJ')
+
+# 1000464-86.2016.8.26.0538 #descartar
+# não chegou a votar o plano (ou isso não aparece na movimentação)
+discard_list <- discard('1000464-86.2016.8.26.0538', 'empresa faliu antes de votar PRJ')
+
+#1000718-73.2017.8.26.0037 #descartar
+# não chegou a votar o plano
+discard_list <- discard('1000718-73.2017.8.26.0037', 'empresa faliu antes de votar PRJ')
+
+#1000989-12.2015.8.26.0180 #decartar
+# não chegou a votar o plano
+discard_list <- discard('1000989-12.2015.8.26.0180', 'empresa faliu antes de votar PRJ')
+
+#1001774-95.2014.8.26.0248 #decartar
+#não chegou a votar o plano 
+discard_list <- discard('1001774-95.2014.8.26.0248', 'empresa faliu antes de votar PRJ')
+
+#1002139-25.2015.8.26.0278 #rejeição
+#plano rejeitado
+
+#1002196-77.2014.8.26.0666 #rejeição
+#plano rejeitado
+
+#1002315-50.2014.8.26.0565 #descartar
+#não chegou a votar o plano
+discard_list <- discard('1002315-50.2014.8.26.0565', 'empresa faliu antes de votar PRJ')
+
+
+#1002317-10.2013.8.26.0127 #descartar
+#não chegou a votar o plano
+discard_list <- discard('1002317-10.2013.8.26.0127', 'empresa faliu antes de votar PRJ')
+
+#1002593-72.2016.8.26.0115 #descartar
+#não chegou a votar o plano
+discard_list <- discard('1002593-72.2016.8.26.0115', 'empresa faliu antes de votar PRJ')
+
+#1002736-60.2016.8.26.0568 #descartar
+#não chegou a votar o plano 
+discard_list <- discard('1002736-60.2016.8.26.0568', 'empresa faliu antes de votar PRJ')
+
+
+#1002781-81.2014.8.26.0100 #descartar
+#credores apresentaram objeção e empresa decidiu falir antes de tentar votar
+discard_list <- discard('1002781-81.2014.8.26.0100', 'empresa faliu antes de votar PRJ')
+
+
+
+#1004159-59.2016.8.26.0114 #tem homologação #tabulado
+#71114
+#ciencia a todos os interessados sobre o plano aprovado
+
+
+
+#1004418-81.2015.8.26.0278 #descartar
+#não tem movimento sobre o plano ter sido aprovado
+#não chegou a votar PRJ
+discard_list <- discard('1004418-81.2015.8.26.0278', 'empresa faliu antes de votar PRJ')
+
+#1004718-69.2016.8.26.0161 #descartar
+#não chegou a votar o plano 
+discard_list <- discard('1004718-69.2016.8.26.0161', 'empresa faliu antes de votar PRJ')
+
+
+#1005217-59.2014.8.26.0408 #descartar
+#75472
+#digam todos os interessados, inclusive, recuperanda, administradora e ministerio publico, acerca da certidao do oficial de justica que da conta do encerramento das atividades comerciais, bem como do fato do imovel no qual estabelecida encontrar-se fechado
+#não chegou a votar o plano
+discard_list <- discard('1005217-59.2014.8.26.0408', 'empresa faliu antes de votar PRJ')
+
+#1005245-54.2016.8.26.0344 #descartar
+#não chegou a votar o plano
+discard_list <- discard('1005245-54.2016.8.26.0344', 'empresa faliu antes de votar PRJ')
+
+#1005397-07.2017.8.26.0526 #descartar
+# 'Depois de vários pedidos de adiamento (fls. 669/683 e 791/798), ainda nãofoi realizada a assembléia geral de credores'
+#não encontrei homologação do plano
+discard_list <- discard('1005397-07.2017.8.26.0526', 'empresa faliu antes de votar PRJ')
+
+
+
+#1006752-59.2013.8.26.0278 #descartar
+#não chegou a votar o plano
+discard_list <- discard('1006752-59.2013.8.26.0278', 'empresa faliu antes de votar PRJ')
+
+
+#1006879-94.2013.8.26.0278 #descartar
+#não chegou a votar o plano
+discard_list <- discard('1006879-94.2013.8.26.0278', 'empresa faliu antes de votar PRJ')
+
+
+
+#1011894-65.2016.8.26.0625 #descartar
+#não chegou a votar o plano
+discard_list <- discard('1011894-65.2016.8.26.0625', 'empresa faliu antes de votar PRJ')
+
+
+#1012224-51.2014.8.26.0037 #descartar
+#não encontrei data de homologação nos movimentos digitalizados
+#chequei pdf e.. não chegou a votar o plano
+discard_list <- discard('1012224-51.2014.8.26.0037', 'empresa faliu antes de votar PRJ')
+
+
+
+#1014271-94.2017.8.26.0068 #descartar
+#não chegou a votar o plano
+# por tudo isso, a designacao de assembleia geral se mostra desnecessaria e inutil neste momento, porque nao ha mais o interesse de agir
+discard_list <- discard('1014271-94.2017.8.26.0068', 'empresa faliu antes de votar PRJ')
+
+
+
+
+#1017667-88.2016.8.26.0529 #tem homologação #descartar porque não acho a homologação do plano
+#teve plano de recuperação, conforme a sentença da página 840 do pdf. Não achei a aprovação do plano por enquanto
+discard_list <- discard('1017667-88.2016.8.26.0529', 'sem movimento de homologação')
+
+
+
+
+#1017737-96.2017.8.26.0068 #rejeição
+#plano foi rejeitado
+#93124: vista ao m.p para manifestacao quanto a aprovacao ou nao da assembleia e consequente decretacao da falencia
+
+
+#1021922-52.2014.8.26.0564 #descartar
+#não chegou a apresentar plano de recuperação judicial
+discard_list <- discard('1021922-52.2014.8.26.0564', 'empresa faliu antes de votar PRJ')
+
+
+
+#1022188-11.2015.8.26.0562 #descartar
+#não consegui checar se tem ou não homologação do plano
+#faliu antes de votar PRJ
+discard_list <- discard('1022188-11.2015.8.26.0562', 'empresa faliu antes de votar PRJ')
+
+
+
+#1038177-65.2014.8.26.0506 #descartar
+#não chegou a votar o plano
+#'com a paralisacao das atividades da empresa, como verificado pessoalmente pela ilustre magistrada do trabalho da comarca de rancharia-sp., a presente recuperacao judicial esta descaracterizada'
+discard_list <- discard('1038177-65.2014.8.26.0506', 'empresa faliu antes de votar PRJ')
+
+
+#1041821-65.2017.8.26.0100 #descartar
+#não chegou a votar o plano
+discard_list <- discard('1041821-65.2017.8.26.0100', 'empresa faliu antes de votar PRJ')
+
+
+#1048330-12.2017.8.26.0100 #descartar
+#113049: objecao ao plano de recuperacao judicial, cumulado com pedido de decretacao de falencia
+#dois meses depois a empresa faliu, logo podemos considerar a data de falência como data de rejeição
+discard_list <- discard('1048330-12.2017.8.26.0100', 'empresa faliu antes de votar PRJ')
+
+
+#1048371-81.2014.8.26.0100 #descartar
+#não chegou a votar o plano
+discard_list <- discard('1048371-81.2014.8.26.0100', 'empresa faliu antes de votar PRJ')
+
+#1056096-53.2016.8.26.0100 #descartar
+#não chegou a votar o plano
+discard_list <- discard('1056096-53.2016.8.26.0100', 'empresa faliu antes de votar PRJ')
+
+
+#1059314-13.2017.8.26.0114 #descartar
+#'... e tambem pela prorrogacao do prazo de suspensao previsto no artigo 6º, § 4º, da lei nº 11.101/2005, ate a homologacao do plano de recuperacao ou por mais 180 dias, o que ocorrer primeiro (fls. 1334/1341). manifestou-se o ministerio publico informando que o pedido das recuperandas ficou prejudicado em funcao do confessado estado de inviabilidade economica na continuidade das atividades comerciais. opinou pela imediata convolacao da recuperacao em quebra (fls.1351/1352).'
+#não chegou a votar o plano
+discard_list <- discard('1059314-13.2017.8.26.0114', 'empresa faliu antes de votar PRJ')
+
+
+
+#1060672-89.2016.8.26.0100 #rejeição
+#'no caso dos autos, os credores discordaram da viabilidade da reestruturacao. a ata da assembleia geral de credores fora juntada a fls. 889 e seguintes. pela deliberacao dos credores, o plano de recuperacao judicial foi rejeitado por 100% da classe dos credores quirografarios'
+#plano foi rejeitado
+
+
+
+#1064828-57.2015.8.26.0100 #descartar
+#não chegou a votar o plano
+discard_list <- discard('1064828-57.2015.8.26.0100', 'empresa faliu antes de votar PRJ')
+
+#1069904-91.2017.8.26.0100 #descartar
+#em janeiro tem a publicação do plano de recuperação, em maio há falência. Não teve homologação
+discard_list <- discard('1069904-91.2017.8.26.0100', 'empresa faliu antes de votar PRJ')
+
+
+#1071698-50.2017.8.26.0100 #descartar, por PRJ fora das normas
+#120899: '...a assembleia geral de credores deliberou e aprovou o plano de fls. 1200/1219..', 'no caso dos autos, o plano nao pode ser homologado, pois contempla injusto tratamento desigual entre credores de mesma classe, sem qualquer justificativa economica'
+#empresa aprovou plano ilegal, juiz não homologou, empresa entrou com recurso, juiz julgou recurso no ano seguinte dizendo que a empresa estava prestes a falir, meses depois há a decretação de falência
+discard_list <- discard('1071698-50.2017.8.26.0100', 'PRJ fora das normas')
+
+
+#1080363-94.2013.8.26.0100 #rejeição
+#' assim, nao aprovado o plano, de rigor, portanto, a convolacao da recuperacao judicial em falencia.2 - posto isso, decreto hoje, nos termos do artigo 56, §4o, da lei n. 11.101/05, a falencia da empresa anglo americana comercial de ferro e aco ltda (cnpj 57.359.937/0001-75) '
+#plano rejeitado
+
+#1114530-69.2015.8.26.0100 #rejeição
+#'entre os credores e as devedoras nao houve concordancia suficiente a lograr-se a aprovacao do plano de recuperacao judicial (fl. 1333)'
+#plano rejeitado
+
+#1131562-87.2015.8.26.0100 #rejeição
+#plano rejeitado
+
+#3000117-39.2013.8.26.0048 #descartar
+#14742 artigo 73, inciso iv
+#não chegou a votar o plano
+#indício de fraude na recuperação
+discard_list <- discard('3000117-39.2013.8.26.0048', 'empresa faliu antes de votar PRJ')
+
+
+
+#4000630-20.2013.8.26.0038 #descartar
+#não tem homologação
+#juiz pediu perícia do plano de recuperação, depois desistiu da perícia, depois decretou falência
+discard_list <- discard('4000630-20.2013.8.26.0038', 'empresa faliu antes de votar PRJ')
+
+#4004874-49.2013.8.26.0019 #descartar
+#não tem homologação do plano
+#o juiz cita artigos: "com fundamento nos artigos 61, paragrafo 1º e 73, inciso iv e 94, inciso iii"
+discard_list <- discard('4004874-49.2013.8.26.0019', 'empresa faliu antes de votar PRJ')
+
+
+#4005870-47.2013.8.26.0019 #descartar
+#conferi e não encontrei data de homologação do plano. O juiz agendou assembleia geral, depois o adm judicial recomendou falência e o juiz acatou
+discard_list <- discard('4005870-47.2013.8.26.0019', 'empresa faliu antes de votar PRJ')
+
+#4012585-14.2013.8.26.0114 #descartar
+#'objecoes foram apresentadas ao plano de recuperacao judicial (fls. 2747/2749, 2762/2764).antes que o edital da relacao de credores fosse publicado (fl. 3045), as autoras pediram convolacao da recuperacao judicial em falencia, diante da incapacidade financeira em cumprir o plano apresentado (fls. 2861/2869 e 3110/3111).o administrador judicial informou nao ter localizado as autoras no novo endereco fornecido (fl. 3048, item 6) e concordou com a convolacao da recuperacao em falencia (fls. 3061/3062),'
+#não chegou a votar o plano
+discard_list <- discard('4012585-14.2013.8.26.0114', 'empresa faliu antes de votar PRJ')
+
+#4015031-87.2013.8.26.0405 #descartar
+#convolou em falência usando inciso ii do art. 73, a saber: 'II - pela não apresentação, pelo devedor, do plano de recuperação no prazo do art. 53 desta Lei;'
+discard_list <- discard('4015031-87.2013.8.26.0405', 'empresa faliu antes de votar PRJ')
+
+
+
+
+
+
+
+```
+
+```{r processos sem data de homologação ou rejeição do plano - parte 2 de 2}
+
+#parte 2 são planos que foram reorganizados com êxito
+#aqui vou listar os processos que foram reorganizados com êxito, assim eu sei que eles têm data de homologação
+
+na_hom_reorg_lista <- na_hom_datasrj %>% 
+  filter(resultado == 'encerrou RJ com êxito') %>% 
+  select(processo) %>% 
+  distinct()
+
+
+# 0013275-91.2008.8.26.0048 #tabulado
+#160947
+#entendo por bem conceder a recuperacao judicial
+
+
+
+# 1000374-40.2015.8.26.0562 #descartar
+#não achei data de homologação
+#51352: empresa faz pedido de "levantamento da recuperação judicial" porque consegue quitar todas as dívidas. Entendo isso como uma desistência, logo a observação será descartada
+discard_list <- discard('1000374-40.2015.8.26.0562', 'empresa desistiu da PRJ')
+
+
+# 1004272-50.2016.8.26.0037 #descartar
+#não achei data de homologação, parece que teve acordo com os credores
+#pg 845 do pdf: adm judicial fala que negociou acordos com os credores de modo a encerrar a RJ. Vou descartar esse processo, pois parece desistência
+discard_list <- discard('1004272-50.2016.8.26.0037', 'empresa desistiu da PRJ')
+
+
+
+# 1013766-34.2016.8.26.0361 #descartar
+#não encontrei data de homologação
+#fl 1174 do pdf: juiz diz que a recuperanda pagou todas as suas dívidas. Vou descartar esse processo, pois parece desistência
+discard_list <- discard('1013766-34.2016.8.26.0361', 'empresa desistiu da PRJ')
+
+
+
+# 1097074-09.2015.8.26.0100 #descartar
+#134317
+#desistência da recuperação judicial
+discard_list <- discard('1097074-09.2015.8.26.0100', 'empresa desistiu da PRJ')
+
+# 1108161-88.2017.8.26.0100 #descartar
+#136070
+#decreto a falencia de edb engenharia do brasil
+#MAS LOGO EM SEGUIDA TEM ENCERRAMENTO COM ÊXITO DA RJ
+#acho que a 'data de homologação' seria 2018-12-18, pois é a data onde julgaram suspensa a decisão de decretar a falência da firma devido ao plano rejeitado. Vou assumir então que o plano foi aceito. Ou então devemos descartar a observação. O id da linha onde isso está é 136119
+#data final ocorre menos de dois  anos após a data de requerimento desse processo. É o caso de descartar.
+discard_list <- discard('1108161-88.2017.8.26.0100', 'empresa desistiu da PRJ')
+
+
+
+
+
+```
+
+
+```{r casos a serem descartados}
+#depois de analisar todos os casos acima, vamos agora descartar os casos que por algum motivo não nos ajudarão na pesquisa:
+#1) casos nos quais houve desistência da recuperação judicial
+#2) casos nos quais não encontramos data de homologação nem de finalização simultaneamente
+#3) casos nos quais ...
+
+datas_rj <- datas_rj %>% 
+  filter(!(processo %in% discard_list$processo))
+
+
+```
+
+Descartamos casos em que a empresa faliu antes de votar o PRJ. Ou que ela desistiu da PRJ. Assim, sobraram apenas casos nos quais ocorreu a decretação de falência por rejeição do plano. Vamos considerar a data de falência como a data de rejeição do plano, então.
+
+```{r casos que foram rejeitados}
+
+datas_rj <- datas_rj %>% 
+  mutate(data_hom = case_when(is.na(data_hom) ~ data_final,
+                              TRUE ~ data_hom))
+
+
+#checando se temos alguma data "NA" em final ou hom
+datas_rj %>% 
+  filter(is.na(data_final))
+
+datas_rj %>% 
+  filter(is.na(data_hom))
+```
+
+
+
+
+#### Processos que tiveram objeção
+
+Aqui a busca é para encontrar processos que tiveram objeção. É algo binário. Não precisamos saber QUANDO a objeção ocorreu, precisamos apenas saber SE ocorreu alguma objeção.
+
+
+
+```{r objeções, eval=FALSE, include=FALSE}
+
+#rascunho para o próximo passo do projeto
+#agora queremos ver quais casos tiveram objeções dos credores
+
+#as objeções são reguladas pelos artigos 55 e 56
+
+pattern_artsobj <- c("artigo 55", "art. 55", "artigo 56", "art. 56") %>% paste(collapse = " | ")
+
+obj_arts <- movs_df %>% 
+  procura_resume(pattern_artsobj) %>% 
+  arrange(processo, date) %>% 
+  group_by(processo) %>% 
+  slice(1) %>% 
+  ungroup()
+
+obj <- movs_df %>% 
+  procura_resume("objec") %>% 
+  arrange(processo, date) %>% 
+  group_by(processo) %>% 
+  slice(1) %>% 
+  ungroup()
+  
+
+hom_art58 <- movs_df %>% 
+  procura_resume(pattern_art58) %>% 
+  arrange(processo, date) %>% 
+  group_by(processo) %>% 
+  slice(1) %>% 
+  ungroup()
+
+
+obj <- movs_df %>% 
+  procura("apresentou objecao")
+
+
+
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+#### 6. Gerar pelo menos uma tabela bem formatada no relatório final
+
+
+
+```{r estatísticas}
+#vamos criar as estatísticas aqui
+
+
+#vamos obter a quantidade de dias entre as duas datas
+#depois vamos dividir a quantidade de dias por 30 para obter "meses"
+
+
+#diferença entre requerimento e homologação
+
+datas_rj <- datas_rj %>% 
+  mutate(dias_req_hom = (data_hom - data_requerimento),
+         meses_req_hom = dias_req_hom/30)
+
+
+#checar datas inferiores a 30 dias - provável que tenha pego dados de deferimento ao invés de homologação
+# datas_rj %>% 
+#   filter(dias_req_hom <30)
+
+#diferença entre requerimento e finalização da RJ
+datas_rj <- datas_rj %>% 
+  mutate(dias_req_final = (data_final - data_requerimento),
+         meses_req_final = dias_req_final/30)
+
+
+
+#diferença entre homologação e finalização da RJ
+datas_rj <- datas_rj %>% 
+  mutate(dias_hom_final = (data_final - data_hom),
+         meses_hom_final = dias_hom_final/30)
+
+
+
+
+
+```
+
+
+O resultado dos dados encontrados está na tabela abaixo. 
+
+
+```{r número de casos de NA}
+
+na_hom <- datas_rj %>% filter(is.na(data_hom)) %>% nrow()
+
+na_final <- datas_rj %>% filter(is.na(data_final)) %>% nrow()
+  
+na_hom_final <- datas_rj %>% filter(is.na(data_final) & is.na(data_hom)) %>% nrow()
+```
+
+O número de casos para os quais não sabemos a data de homologação é `r na_hom`.
+
+O número de casos para os quais não sabemos a data de finalização do processo é `r na_final`.
+
+E o número de casos para os quais não sabemos nem a data de homologação nem a data de finalização do processo é `r na_hom_final`.
+
+
+
+```{r tabela bem formatada, results='asis'}
+
+
+#o stargazer só faz estatísticas descritivas de dataframes
+datas_rj_descr <- datas_rj %>% select(meses_req_final, meses_req_hom, meses_hom_final) %>% as.data.frame()
+
+#transformando para numeric, do contrário a função summary não funciona bem
+datas_rj_descr <- datas_rj_descr %>% 
+  mutate_all(as.numeric)
+
+
+colunas_descr <- c("Meses entre requerimento e final", "Meses entre requerimento e homologação", "Meses entre homologação e final")
+
+
+datas_rj_descr %>% summary() %>% kable(digits = 2, align = "c", col.names = colunas_descr, caption = "Estatísticas Descritivas")
+
+
+#desisti de usar stargazer porque ele não mostrava o número de observações NA
+# stargazer(datas_rj_descr, type = "html")
+
+
+```
+
+Vemos que, por exemplo, pelo menos metade dos casos de recuperação judicial dessa amostra demoraram mais que 3 anos (40 meses) desde a data de requerimento até o encerramento do processo.
+
+Repare que há um número negativo na coluna "Meses entre homologação e final". Isto se deve a uma classificação incorreta das datas. Preferi deixar no trabalho para mostrar que ainda preciso pensar em formas melhores de checar os dados, e qualquer sugestão para isso é bem vinda.
+
+Outro dado interesante é a mediana dos meses entre o requerimento e a homologação. Pelo menos metade dos casos demora mais que 14 meses nesta fase, sendo que idealmente esse prazo não deveria ser superior a 6 meses. Casos com número de meses entre requerimento e homologação altos podem ser de casos que foram abandonados pela empresa que pediu a recuperação.
+
+
+
+```{r checando estatísticas descritivas}
+#casos com finalização antes da homologação
+chec_hom_final <- datas_rj %>% 
+  filter(meses_hom_final < 0 )
+
+```
+
+
+
+#### 7. Gerar pelo menos dois gráficos ou mapas bem formatados no relatório final
+
+O primeiro gráfico é a densidade do número de meses entre o requerimento da recuperação judicial e o final do processo. Sim, existem casos que passam mais de 10 anos na corte antes de encerrarem. Na nossa amostra, a maioria dos casos demora até 6 anos para terminar.
+```{r g1}
+
+#gráfico de meses entre requerimento e final
+#usei escala de 12 em 12 para facilitar a visualização dos dados em anos.
+#o argumento binwidth = 12 dentro de geom_histogram() não funcionou como eu esperava
+
+xmin <- datas_rj %>% pull(meses_req_final) %>% as.numeric() %>% min(na.rm = T) %>% floor()
+xmax <- datas_rj %>% pull(meses_req_final) %>% as.numeric() %>% max(na.rm = T) %>% floor()
+
+#testei histograma, porém preferi a densidade
+# datas_rj %>% 
+#   ggplot()+
+#   geom_histogram(aes(x = meses_req_final), na.rm = T, fill = "blue", alpha = 0.3, color = "black") +
+#   scale_x_continuous(aes(x = meses_req_final), breaks = seq(0, xmax, 12))+
+#   ggtitle("Número de meses entre requerimento e data final do processo")+
+#   theme(plot.title = element_text(hjust = 0.5, size = 11))+
+#   ylab("Número de observações")+
+#   xlab("Meses entre requerimento e data final")+
+#   theme_economist_white(base_size = 8, base_family = "sans")
+  
+  
+datas_rj %>% 
+  ggplot(aes(x = meses_req_final))+
+  geom_density(na.rm = T, fill = "blue", alpha = 0.3, color = "black") +
+  scale_x_continuous(breaks = seq(0, xmax, 12))+
+  xlab("Meses") +
+  ggtitle("Número de meses entre requerimento e data final do processo")+
+  ylab("Densidade")+
+  theme_economist_white(base_size = 8, base_family = "sans", horizontal = F)+
+  theme(plot.title = element_text(hjust = 0.5, size = 11))
+  
+
+```
+
+
+Após o requerimento da recuperação judicial, o juiz suspende todas as cobranças contra a empresa pelo prazo de 180 dias. Neste período espera-se que a empresa apresente um plano de recuperação judicial e consiga apoio de seus credores. Então destacamos o prazo de 6 meses na linha tracejada no gráfico. Percebe-se que a minoria dos casos cai dentro desse prazo "ideal".
+
+
+
+```{r g2}
+
+#gráfico de meses entre requerimento e homologação
+#usei escala de 12 em 12 para facilitar a visualização dos dados em anos.
+#o argumento binwidth = 12 dentro de geom_histogram() não funcionou como eu esperava
+
+xmin2 <- datas_rj %>% pull(meses_req_hom) %>% as.numeric() %>% min(na.rm = T) %>% floor()
+xmax2 <- datas_rj %>% pull(meses_req_hom) %>% as.numeric() %>% max(na.rm = T) %>% floor()
+
+  
+datas_rj %>% 
+  ggplot()+
+  geom_density(aes(x = meses_req_hom), na.rm = T, fill = "blue", alpha = 0.3, color = "black") +
+  scale_x_continuous(breaks = seq(0, xmax2, 12))+
+  xlab("Meses") +
+  geom_vline(aes(xintercept = 6), linetype="dashed", colour="red") +
+  ggtitle("Número de meses entre requerimento e homologação do processo")+
+  ylab("Densidade")+
+  theme_economist_white(base_size = 8, base_family = "sans", horizontal = F) +
+  theme(plot.title = element_text(hjust = 0.5, size = 11)) +
+  xlab("Meses")
+
+
+
+
+```
+
+Após a homologação do plano, a empresa ainda passa um período de pelo menos dois anos sob supervisão judicial. Esse é o período mínimo antes que o juiz encerre o processo considerando a empresa recuperada de fato. Se o processo foi encerrado antes disso é porque a empresa não conseguiu cumprir seu plano de recuperação judicial, logo teve seu processo transformado em uma falência. A linha pontilhada agora destaca esse prazo de 24 meses. 
+
+
+
+```{r g3}
+
+
+#gráfico de meses entre requerimento e homologação
+#usei escala de 12 em 12 para facilitar a visualização dos dados em anos.
+
+
+xmin3 <- datas_rj %>% pull(meses_hom_final) %>% as.numeric() %>% min(na.rm = T) %>% floor()
+xmax3 <- datas_rj %>% pull(meses_hom_final) %>% as.numeric() %>% max(na.rm = T) %>% floor()
+
+  
+datas_rj %>% 
+  ggplot()+
+  geom_density(aes(x = meses_hom_final), na.rm = T, fill = "blue",  alpha = 0.3, color = "black") +
+  scale_x_continuous(breaks = seq(0, xmax3, 12))+
+  xlab("Meses") +
+  geom_vline(aes(xintercept = 24), linetype="dashed", colour="red") +
+  ggtitle("Número de meses entre homologação e final do processo")+
+  ylab("Densidade")+
+  xlab("Meses")+
+  theme_economist_white(base_size = 8, base_family = "sans", horizontal = F) +
+  theme(plot.title = element_text(hjust = 0.5, size = 11))
+  
+
+#código in-line
+n_hom_final <- datas_rj %>%
+  filter(meses_hom_final > 0) %>% 
+  nrow()
+
+
+n_hom_final_24 <- datas_rj %>%
+  filter(meses_hom_final > 0 & meses_hom_final < 24) %>% 
+  nrow()
+
+
+```
+
+
+Visualmente, parece que mais de um terço dos casos possui menos de 24 meses entre homologação e finalização. De fato, considerando apenas os casos com número de meses superior a zero, temos um total de `r n_hom_final` casos, dos quais `r n_hom_final_24` se encerram antes de 24 meses. Isto significa que pelo menos `r round(100 * n_hom_final_24/n_hom_final, 2)`% dos casos nos quais os credores chegam a aprovar um plano de recuperação são transformados em falência porque a empresa não conseguiu cumprir com o plano.
+
+
+
+#### 9. Configurar os parâmetros dos chunks para gerar um relatório limpo e claro
+
+#### 10. Submeter o seu script, e o documento final (HMTL/PDF)
+
+
+
+
+
+#### 11. Checando quais casos têm dados estranhos
+
+```{r casos com data de encerramento antes da homologação}
+
+chec_hom_final <- datas_rj %>% 
+  filter(meses_hom_final < 0 )
+
+#caso com final 0539 a data final está ok, mas na verdade a homologação que foi errada
+#caso 1001489-59.2017.8.26.0099 é estranho: teve a rj convolada em falência e depois o juiz permitiu que fizessem nova assembleia, aprovassem novo plano e aí homologou a rj. Mais seguro é só retirar esse caso da amostra
+
+
+```
+
+
+
+```{r meses até requerimento muito altos}
+datas_rj %>% 
+  filter(meses_req_hom > 36)
+```
