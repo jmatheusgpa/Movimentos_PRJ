@@ -851,71 +851,7 @@ discard_list <- discard('1028638-95.2014.8.26.0564', 'empresa faliu antes de vot
 
 
 
-```{r checando casos com homologação NA}
 
-#às vezes o plano de recuperação judicial não é homologado.
-#pode ser que ele seja reprovado pelos credores, daí o juiz transforma (convola) a recuperação judicial em falência
-#vou verificar se isso aconteceu com parte dos casos anteriores
-
-
-
-#o juiz convola a RJ em falência a pedido dos credores usando o inciso iii do artigo 73
-check_hom_convol <- datas_rj %>% 
-  filter(is.na(data_hom)) %>% 
-  rename(detalhes = detalhes_final) %>% #para eu poder usar a função procura()
-  procura_resume("73, iii, | 73, inc. iii, | 73, inciso iii,")
-
-#o juiz convola a RJ em falência quando usa o inciso ii quando a empresa não apresenta plano de recuperação 
-check_hom_convol2 <- datas_rj %>% 
-  filter(is.na(data_hom)) %>% 
-  rename(detalhes = detalhes_final) %>% #para eu poder usar a função procura()
-  procura_resume("73, ii, | 73, inc. ii, | 73, inciso ii,")
-
-#nos dois casos acima, a "data de homologacao" passa a ser a data de encerramento da RJ
-#vamos incorporar isso usando case_when()
-
-
-pattern_73 <- c("73, iii | 73, inc(iso|.) iii | 73, ii | 73, inc(iso|.) ii")
-
-# datas_rj <- datas_rj %>% 
-#   mutate(data_hom = case_when(is.na(data_hom) & str_detect(detalhes_final, pattern_73) ~ data_final,
-#                               TRUE ~ data_hom))
-
-#por fim, uma curiosidade: existem processos que citam artigo 73 inciso iii para convolar em falência mesmo quando já têm data de homologação do plano. Isso é esquisito, mas acontece quando o juiz aprova um plano forçadamente - usando cram down, passando por cima da decisão dos credores -, mas depois convola a rj em falência alegando que o plano não tinha sido aprovado pelos credores
-datas_rj_73 <- datas_rj %>% 
-  rename(detalhes = detalhes_final) %>% 
-  procura_resume("73, iii, | 73, inc. iii, | 73, inciso iii,")
-
-
-
-
-```
-
-
-
-
-
-
-
-
-
-```{r conferindo dados do input_manual}
-
-input_manual <- readRDS('outcomes_ze_matheus.RDS')
-
-
-#checando processos que parecem estar em andamento
-
-
-#1008112-48.2015.8.26.0152
-#1023746-04.2015.8.26.0114
-#1025824-13.2015.8.26.0100
-
-#os três ainda estão em andamento, vou excluir da análise.
-
-
-
-```
 
 
 
