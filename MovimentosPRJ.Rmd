@@ -1625,6 +1625,12 @@ datas_rj %>%
 
 ```
 
+
+Agora o mínimo que temos entre requerimento e homologação do processo são 6.1 meses. Isso faz sentido, pois a firma tem 60 dias para apresentar o plano de recuperação e os credores têm mais 30 dias para apresentar qualquer objeção. Então teoricamente o número mínimo de meses que poderíamos observar é 3.
+
+Prazos muitos altos entre requerimento e homologação ou foram porque o processo demorou mesmo ou porque a empresa faliu após ter o plano rejeitado pelos credores. Nos dois casos, tem uma demora.
+
+
 Após a homologação do plano, a empresa ainda passa um período de pelo menos dois anos sob supervisão judicial. Esse é o período mínimo antes que o juiz encerre o processo considerando a empresa recuperada de fato. Se o processo foi encerrado antes disso é porque a empresa não conseguiu cumprir seu plano de recuperação judicial, logo teve seu processo transformado em uma falência. A linha pontilhada agora destaca esse prazo de 24 meses. 
 
 
