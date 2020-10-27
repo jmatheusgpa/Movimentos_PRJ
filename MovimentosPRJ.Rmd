@@ -1,7 +1,7 @@
 ---
-title: "Projeto Final "
+title: "Extraindo Movimentações com RegEx "
 author: "José Matheus"
-date: "29/05/2020"
+date: "26/10/2020"
 output:
   html_document: default
   pdf_document: default
@@ -24,6 +24,9 @@ knitr::opts_chunk$set(
 # install.packages("ggthemes")
 
 # install.packages("htmlwidgets") 
+# install.packages("xlsx")
+
+
 library(htmlwidgets) #str_view()
 library(ggthemes)
 
@@ -34,7 +37,7 @@ library(tidytext)
 library(stargazer)
 
 library(knitr)
-
+library("xlsx")
 ```
 
 
@@ -835,7 +838,6 @@ Juntando os dados de homologação ao nosso banco de dados.
 
 ```{r datas_rj - adicionando data de  homologação}
 
-#incorporando datas de homologação #### 
 datas_rj <- datas_rj %>% 
   left_join(hom, by = "processo")
 
@@ -1370,7 +1372,7 @@ discard_list <- discard('1108161-88.2017.8.26.0100', 'empresa desistiu da PRJ')
 ```
 
 
-```{r casos a serem descartados}
+```{r datas_rj - casos a serem descartados}
 #depois de analisar todos os casos acima, vamos agora descartar os casos que por algum motivo não nos ajudarão na pesquisa:
 #1) casos nos quais houve desistência da recuperação judicial
 #2) casos nos quais não encontramos data de homologação nem de finalização simultaneamente
@@ -1384,7 +1386,7 @@ datas_rj <- datas_rj %>%
 
 Descartamos casos em que a empresa faliu antes de votar o PRJ. Ou que ela desistiu da PRJ. Assim, sobraram apenas casos nos quais ocorreu a decretação de falência por rejeição do plano. Vamos considerar a data de falência como a data de rejeição do plano, então.
 
-```{r casos que foram rejeitados}
+```{r datas_rj - casos que foram rejeitados}
 
 datas_rj <- datas_rj %>% 
   mutate(data_hom = case_when(is.na(data_hom) ~ data_final,
@@ -1406,46 +1408,72 @@ datas_rj %>%
 
 Aqui a busca é para encontrar processos que tiveram objeção. É algo binário. Não precisamos saber QUANDO a objeção ocorreu, precisamos apenas saber SE ocorreu alguma objeção.
 
+Uma Assembleia Geral de Credores(AGC) pode ser convocada após um deles prestar objeção (arts. 55 e 56). Ou então quando o devedor se afastar (art 64), pode convocar AGC para nomear um Comitê de Credores quando decreta a falência da empresa (art. 99), para deliberar sobre alienação de ativos da empresa ainda em RJ (art. 145), quando o adm judicial considerar necessário (art. 22), quando convocada pelo Comitê de Credores (art. 27). O artigo 35 resume os cenários sobre os quais a AGC delibera: aprovação ou rejeição do PRJ, constituição do comitê de credores, pedido de desistência do devedor, nome do gestor judicial quando o devedor for afastado, ou qualquer outra matéria que possa afetar os interesses dos credores.
+
+Assim, para entender os casos nos quais tivemos objeção, vamos procurar as palavras-chave "assembleia geral de credores" e "agc". Depois filtraremos para todos os casos que ocorreram ANTES da aprovação ou rejeição do plano.
 
 
-```{r objeções, eval=FALSE, include=FALSE}
+
+
+```{r objeções}
 
 #rascunho para o próximo passo do projeto
 #agora queremos ver quais casos tiveram objeções dos credores
 
 #as objeções são reguladas pelos artigos 55 e 56
 
-pattern_artsobj <- c("artigo 55", "art. 55", "artigo 56", "art. 56") %>% paste(collapse = " | ")
+# pattern_artsobj <- c("artigo 55", "art. 55", "artigo 56", "art. 56") %>% paste(collapse = " | ")
+# 
+# obj_arts <- movs_df %>% 
+#   procura_resume(pattern_artsobj) %>% 
+#   arrange(processo, date) %>% 
+#   group_by(processo) %>% 
+#   slice(1) %>% 
+#   ungroup()
+# 
+# obj_objec <- movs_df %>% 
+#   procura_resume("objec") %>% 
+#   arrange(processo, date) %>% 
+#   group_by(processo) %>% 
+#   slice(1) %>% 
+#   ungroup()
+#   
+# 
+# pattern_art58 <- c("art(.|igo) 58")
+# 
+# hom_art58 <- movs_df %>% 
+#   procura_resume(pattern_art58) %>% 
+#   arrange(processo, date) %>% 
+#   group_by(processo) %>% 
+#   slice(1) %>% 
+#   ungroup()
 
-obj_arts <- movs_df %>% 
-  procura_resume(pattern_artsobj) %>% 
-  arrange(processo, date) %>% 
+
+
+#usei "assembleia" porque alguns juizes falam somente "assembleia" ou "assembleia de credores" ao invés de "assembleia geral de credores"
+#chequei na lei e só existe "assembleia" de credores, logo não há perigo de confundir com outra coisa.
+pattern_agc <- c("assembleia", "agc") %>% paste(collapse = " |")
+
+agc <- movs_df %>% 
+  procura_resume(pattern_agc) %>% 
+  arrange(processo,date) %>% 
   group_by(processo) %>% 
   slice(1) %>% 
   ungroup()
 
-obj <- movs_df %>% 
-  procura_resume("objec") %>% 
-  arrange(processo, date) %>% 
-  group_by(processo) %>% 
-  slice(1) %>% 
-  ungroup()
-  
 
-hom_art58 <- movs_df %>% 
-  procura_resume(pattern_art58) %>% 
-  arrange(processo, date) %>% 
-  group_by(processo) %>% 
-  slice(1) %>% 
-  ungroup()
+agc_semslice <- movs_df %>% 
+  procura_resume(pattern_agc) %>% 
+  arrange(processo,date)
 
 
-obj <- movs_df %>% 
-  procura("apresentou objecao")
-
-
-
-
+#vamos juntar a data da agc com a  base de dados geral para testar
+agc <- agc %>% 
+  select(processo, date, detalhes, detalhes_resumo, id_linha) %>% 
+  rename(data_agc = date,
+         detalhes_agc = detalhes,
+         detalhes_agc_resumo = detalhes_resumo,
+         id_linha_agc = id_linha)
 
 
 ```
@@ -1454,8 +1482,71 @@ obj <- movs_df %>%
 
 
 
+```{r datas_rj - adicionando casos com objeção}
 
 
+datas_rj <- datas_rj %>% 
+  left_join(agc, by = "processo")
+
+
+#checando se alguma agc aconteceu após a aprovação/rejeição do plano
+check <- datas_rj %>% 
+  filter(data_hom < data_agc)
+
+#checando casos em que agc ocorreu antes da aprovação/rejeição do plano. Ou seja, casos conforme o esperado
+check <- datas_rj %>% 
+  filter(data_hom > data_agc)
+
+#checando casos onde agc é citada na mesma data de aprovação/rejeição do plano. São casos em que a AGC ocorreu antes
+check <- datas_rj %>% 
+  filter(data_hom == data_agc)
+
+#checando casos em que não encontramos movimentações citando agc
+check <- datas_rj %>% 
+  filter(is.na(data_agc))
+
+
+```
+
+
+
+```{r criando variável binária para casos com objeção}
+
+#quando data da homologação vem no mesmo dia ou depois da agc, é porque teve objeção. Caso contrário, não teve
+#quando não existe data de agc, é porque não tivemos objeção
+
+datas_rj <- datas_rj %>% 
+  mutate(tem_obj = case_when(data_hom >= data_agc ~ 1,
+                             data_hom < data_agc ~ 0,
+                             is.na(data_agc) ~ 0))
+
+```
+
+Criar uma tabela com casos que tiveram objeção
+
+
+
+
+
+
+
+```{r filtrando casos com objeção que foram reorganizados}
+
+#isso é para coletar novamente as propostas de pagamento, daí calcular as taxas de recuperação de crédito
+
+reorg_obj <- datas_rj %>%
+  filter((tem_obj == 1) & (resultado == 'encerrou RJ com êxito'))
+  
+
+
+#criando csv para pesquisar esses casos de novo
+#seleciona só a data da agc e data hom para saber mais ou menos onde procurar os dados no processo
+reorg_obj_export <- reorg_obj %>% 
+  select(processo, data_agc, data_hom)
+
+
+write.xlsx(reorg_obj_export, file = "reorg_obj.xlsx")
+```
 
 
 
@@ -1553,6 +1644,14 @@ Repare que há um número negativo na coluna "Meses entre homologação e final"
 Outro dado interesante é a mediana dos meses entre o requerimento e a homologação. Pelo menos metade dos casos demora mais que 14 meses nesta fase, sendo que idealmente esse prazo não deveria ser superior a 6 meses. Casos com número de meses entre requerimento e homologação altos podem ser de casos que foram abandonados pela empresa que pediu a recuperação.
 
 
+```{r tabela tempo dos casos com e sem objeção}
+
+
+datas_rj %>% 
+  group_by(tem_obj, resultado) %>% 
+  summarise(mean_req_hom = mean(meses_req_hom))
+
+```
 
 
 
