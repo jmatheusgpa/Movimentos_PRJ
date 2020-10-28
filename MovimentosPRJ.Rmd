@@ -248,6 +248,8 @@ procura <- function(dados, padrao){
 }
 
 
+
+
 #função para dizer se um processo NÂO possui um padrão de texto que eu procurei
 procura_nao <- function(dados, padrao){
   
@@ -310,6 +312,9 @@ procura_resume <- function(data, string){
   
   
 }
+
+
+
 
 #função para ler texto da coluna "detalhes" procurando por id_linha
 
@@ -995,6 +1000,7 @@ discard_list <- discard('0036903-79.2010.8.26.0100', 'empresa faliu antes de vot
 #0039066-27.2013.8.26.0100 #descartar
 # 169021
 #sem que ate o momento tenha sido convocada a assembleia geral de credores ... pelo exposto, com fundamento no art. 73, paragrago unico, c/c o art. 94, iii, \"f\", da lei 11.101/2005, convolo a recuperacao em falencia
+discard_list <- discard('0039066-27.2013.8.26.0100', 'empresa faliu antes de votar PRJ')
 
 
 #0043432-80.2011.8.26.0100 #descartar
@@ -1393,6 +1399,11 @@ datas_rj <- datas_rj %>%
                               TRUE ~ data_hom))
 
 
+#quando o caso for rejeitado, o texto da decisão de "aprovação/rejeição" dele será o texto da decretação de falência
+datas_rj <- datas_rj %>% 
+  mutate(detalhes_hom = case_when(is.na(detalhes_hom) ~ detalhes_final,
+                              TRUE ~ detalhes_hom))
+
 #checando se temos alguma data "NA" em final ou hom
 datas_rj %>% 
   filter(is.na(data_final))
@@ -1510,17 +1521,97 @@ check <- datas_rj %>%
 
 
 
+
+
 ```{r criando variável binária para casos com objeção}
 
-#quando data da homologação vem no mesmo dia ou depois da agc, é porque teve objeção. Caso contrário, não teve
+#quando data da homologação vem no mesmo dia ou depois da agc, é porque teve objeção na maioria das vezes. Caso contrário, não teve
 #quando não existe data de agc, é porque não tivemos objeção
+
+
 
 datas_rj <- datas_rj %>% 
   mutate(tem_obj = case_when(data_hom >= data_agc ~ 1,
                              data_hom < data_agc ~ 0,
                              is.na(data_agc) ~ 0))
 
+backup <- datas_rj
+
+# backup %>% 
+#   group_by(tem_obj) %>% 
+#   tally()
+# 
+# backup %>% 
+#   filter(tem_obj==0)
+
+
 ```
+
+
+
+Existem alguns casos em que o juiz fala "se tiver objeção, então convoque assembleia". Esses casos são mais difíceis de lidar. No entanto, sempre que há assembleia, o juiz deve citar que o plano foi aprovado na sentença em que homologa o plano de recuperação judicial (detalhes_hom). Assim, eu vou manter como objeção somente os casos onde:
+
+    * A data da primeira citação de "assembleia" ocorre antes da decisão de aprovar ou rejeitar o plano e
+    * O texto de "assembleia" contém a palavra "convocação", pois isso indica que o juiz realmente convocou agc
+      * Caso o texto não tenha convocação, temos que olhar os critérios abaixo:
+          * a decisão de aprovar/rejeitar contém as palavras "aprovado" ou "rejeitado", pois o juiz deve levar as deliberações da AGC em consideração.
+          * A decisão de aprovar/rejeitar cita artigo 73 inciso iii, que é quando a falência é decretada porque os credores rejeitaram o plano
+    
+    
+    
+Casos que não têm objeção são casos em que:
+
+    *a data do movimento citando assembleia ocorre depois da data de homologação
+    *ou: data_agc < data_hom, mas a decisão de homologação NÂO cita APROV/REJEIT e TAMBÈM contém as palavras "objecao" e "impugnac". Pois sempre que o juiz cita objeção e impugnação na decisão de homologação é porque ele tá falando que não tem. Chequei manualmente isso.
+```{r refinando variável binária para casos com objeção}
+
+#quando data da homologação vem no mesmo dia ou depois da agc, é porque teve objeção na maioria das vezes. 
+#vamos refinar isso considerando casos em que data_agc < data_hom e mesmo assim não teve objeção
+
+
+
+pattern_aprov <- c('aprov|rejei|73, iii') %>% paste(collapse = " | ")
+
+check <- datas_rj %>% 
+  mutate(tem_aprov = str_detect(datas_rj$detalhes_hom, pattern = pattern_aprov)) %>% 
+  select(processo, detalhes_hom, detalhes_hom_resumo, detalhes_agc, detalhes_agc_resumo, tem_aprov)
+
+
+# check$tem_aprov %>% summary()
+
+check <- check %>% 
+  filter(tem_aprov == F)
+
+pattern_impug <- c('objec|impugnac')
+
+# check %>% 
+#   filter(str_detect(detalhes_hom, pattern_impug))
+
+#criando os filtros
+datas_rj <- datas_rj %>%
+  mutate(tem_aprov = str_detect(detalhes_hom, pattern = pattern_aprov)) %>% 
+  mutate(tem_impug = str_detect(detalhes_hom, pattern = pattern_impug))
+
+
+
+#adicionando casos onde o texto não cita aprovação, mas cita impugnação como casos 
+datas_rj <- datas_rj %>% 
+  mutate(tem_obj = case_when(tem_aprov==F & tem_impug==T ~ 0,
+                             TRUE ~ tem_obj))
+
+# 
+# datas_rj %>% 
+#   group_by(tem_obj) %>% 
+#   tally()
+# 
+# datas_rj %>% 
+#   filter(tem_obj==0)
+
+
+```
+
+
+
 
 Criar uma tabela com casos que tiveram objeção
 
@@ -1545,10 +1636,19 @@ reorg_obj_export <- reorg_obj %>%
   select(processo, data_agc, data_hom)
 
 
-write.xlsx(reorg_obj_export, file = "reorg_obj.xlsx")
+
+# write.xlsx(reorg_obj_export, file = "reorg_obj.xlsx")
 ```
 
 
+```{r procurando planos modificados}
+
+
+#não dá para usar isso porque o juiz pode falar "plano aprovado em assembleia" e este plano ser modificado. Olharei manualmente.
+plano_modificado <- movs_df %>% 
+  procura_resume('modificado')
+
+```
 
 
 
