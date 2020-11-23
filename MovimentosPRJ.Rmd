@@ -477,7 +477,7 @@ enc <- enc_filtro %>%
 
 #preparando os dados para bind
 enc <- enc %>% 
-  mutate(resultado = "encerrou RJ com êxito") %>% 
+  mutate(resultado = "reorganized") %>% 
   select(processo, date, resultado, detalhes, detalhes_resumo, id_linha)
 
 
@@ -554,7 +554,7 @@ dec <- dec_filtro %>%
 
 #preparando os dados para o bind
 dec <- dec %>% 
-  mutate(resultado = "falência") %>% 
+  mutate(resultado = "bankruptcy") %>% 
   select(processo, date, resultado, detalhes, detalhes_resumo, id_linha)
 
 
@@ -1587,9 +1587,12 @@ pattern_impug <- c('objec|impugnac')
 # check %>% 
 #   filter(str_detect(detalhes_hom, pattern_impug))
 
+
+
+
 #criando os filtros
 datas_rj <- datas_rj %>%
-  mutate(tem_aprov = str_detect(detalhes_hom, pattern = pattern_aprov)) %>% 
+  mutate(tem_aprov = str_detect(detalhes_hom, pattern = pattern_aprov)) %>%
   mutate(tem_impug = str_detect(detalhes_hom, pattern = pattern_impug))
 
 
@@ -1599,11 +1602,29 @@ datas_rj <- datas_rj %>%
   mutate(tem_obj = case_when(tem_aprov==F & tem_impug==T ~ 0,
                              TRUE ~ tem_obj))
 
+
+#testando caso 202-38, que não tem objeção, mas classifiquei erroneamente que tinha
+
+#textos específicos que encontrei olhando casos que não tinham objeção
+pattern_naoobj <- c("nao houve qualquer objecao", 'inexistencia de objecao', 'nao havendo objecao', 'nao houve objecao') %>% paste(collapse = '|')
+
+
+
+datas_rj <- datas_rj %>% 
+  mutate(naoobj = str_detect(detalhes_hom, pattern_naoobj))
+
+check <- datas_rj %>% 
+  filter(naoobj==T)
+
+datas_rj <- datas_rj %>% 
+  mutate(tem_obj = case_when(naoobj==T~0,
+                             TRUE~tem_obj))
+
 # 
-# datas_rj %>% 
-#   group_by(tem_obj) %>% 
-#   tally()
-# 
+datas_rj %>%
+  group_by(tem_obj) %>%
+  tally()
+
 # datas_rj %>% 
 #   filter(tem_obj==0)
 
@@ -1620,27 +1641,6 @@ Criar uma tabela com casos que tiveram objeção
 
 
 
-
-```{r filtrando casos com objeção que foram reorganizados}
-
-#isso é para coletar novamente as propostas de pagamento, daí calcular as taxas de recuperação de crédito
-
-reorg_obj <- datas_rj %>%
-  filter((tem_obj == 1) & (resultado == 'encerrou RJ com êxito'))
-  
-
-
-#criando csv para pesquisar esses casos de novo
-#seleciona só a data da agc e data hom para saber mais ou menos onde procurar os dados no processo
-reorg_obj_export <- reorg_obj %>% 
-  select(processo, data_agc, data_hom)
-
-
-
-# write.xlsx(reorg_obj_export, file = "reorg_obj.xlsx")
-```
-
-
 ```{r procurando planos modificados}
 
 
@@ -1649,6 +1649,56 @@ plano_modificado <- movs_df %>%
   procura_resume('modificado')
 
 ```
+
+
+
+#### Número de meses entre as decisões do juiz
+
+```{r meses entre decisões do juiz}
+
+#proxy para simular o quanto demora um período dentro do jogo
+
+#usarei todas as movimentações que possivelmente são feitas pelo juiz, coletadas manualmente olhando 'descr_movimentos'
+
+mov_juiz <- c("Decisão",'Decisão Determinação', "Mero expediente",'Despacho',"Despacho Proferido", 'Ato ordinatório',"Sentença Completa com Rsolução de Mérito",'Sentença Declarada', "Sentença de Concessão Completa", "Sentença de Concessão Resumida", 'Sentença  Proferida', "Declarado o Encerramento da Falência", "Decretação de falência", "Decretação do Encerramento da Recuperação Judicial", "Decretada a Falência - Sentença Completa", "Decretada a Falência - Sentença Resumida", "Concedida a Antecipação de tutela", "Concedida a Dilação de Prazo", "Concedida a Medida Liminar", "Concedida a recuperação judicial", "Concedida em parte a Antecipação de Tutela","Concedido efeito suspensivo a Recurso")
+
+months_decisions <- movs_df_completo %>% 
+  filter(movimento %in% mov_juiz) %>% 
+  select(processo, date, detalhes) %>%
+  mutate(date_lag = lag(date)) %>% 
+  group_by(processo) %>% 
+  slice(2:n()) %>% 
+  ungroup()
+
+
+months_decisions <- months_decisions %>%
+  group_by(processo) %>% 
+  mutate(n_months = (date - date_lag)/30)
+
+
+#precisamos deixar apenas as datas que ocorreram antes da homologação/rejeição do plano, pois esta marca o final do jogo
+data_hom <- datas_rj %>% 
+  select(processo, data_hom)
+
+months_decisions <- months_decisions %>%
+  left_join(data_hom) %>% 
+  filter(date <= data_hom)
+
+#limpando a base
+
+months_decisions <- months_decisions %>% 
+  group_by(processo) %>% 
+  summarize(avg_months_decisions = mean(n_months)) %>% 
+  ungroup()
+
+
+
+#juntando os dados na base
+datas_rj <- datas_rj %>% 
+  left_join(months_decisions)
+```
+
+
 
 
 
@@ -1749,7 +1799,7 @@ Outro dado interesante é a mediana dos meses entre o requerimento e a homologa�
 
 datas_rj %>% 
   group_by(tem_obj, resultado) %>% 
-  summarise(mean_req_hom = mean(meses_req_hom))
+  summarise(mean_req_hom = median(meses_req_hom))
 
 ```
 
@@ -1884,5 +1934,94 @@ Visualmente, parece que mais de um terço dos casos possui menos de 24 meses ent
 
 
 
-#### 11. Checando quais casos têm dados estranhos
+#### 11. Extração de dados
 
+
+
+```{r filtrando casos com objeção que foram reorganizados}
+library(lubridate)
+#isso é para coletar novamente as propostas de pagamento, daí calcular as taxas de recuperação de crédito
+
+reorg_obj <- datas_rj %>%
+  filter((tem_obj == 1) & (resultado == 'encerrou RJ com êxito'))
+  
+
+
+#criando csv para pesquisar esses casos de novo
+#seleciona só a data da agc e data hom para saber mais ou menos onde procurar os dados no processo
+reorg_obj_export <- reorg_obj %>% 
+  select(processo, data_agc, data_hom, detalhes_hom)
+
+
+# write.xlsx(reorg_obj_export, file = "reorg_obj.xlsx")
+
+
+#lista sem objecao que foi reorganizado: 9 observações
+reorg_sem_obj <- datas_rj %>%
+  filter((tem_obj == 0) & (resultado == 'encerrou RJ com êxito'))
+```
+
+
+
+
+
+```{r lista de processos com objeção}
+
+lista_obj <- datas_rj %>% 
+  select(processo, tem_obj) %>% 
+  filter(tem_obj == 1)
+
+# write.xlsx(lista_obj, file = 'lista_obj.xlsx')
+
+
+
+```
+
+
+
+```{r lista de processos reorganizados sem objeção}
+
+lista_reorg_precourt <- reorg_sem_obj %>% 
+  select(processo)
+
+# write.xlsx(lista_reorg_precourt, file = 'lista_reorg_precourt.xlsx')
+
+
+
+```
+
+
+```{r lista de processos com dados de movimentação}
+
+lista_mov <- datas_rj %>% 
+  select(processo)
+
+# write.xlsx(lista_mov, file = 'lista_mov.xlsx')
+
+
+```
+
+
+
+
+```{r banco de dados com as datas das movimentações}
+
+#resumindo o banco de dados, mantendo só os dados que serão usados
+
+datas_rj_export <- datas_rj %>% 
+  select(processo, data_requerimento, data_hom, data_final, resultado, meses_req_hom, meses_req_final, meses_hom_final, tem_obj, avg_months_decisions) %>% 
+  rename(filing_date = data_requerimento, 
+         plan_date = data_hom, #data de confirmação ou rejeição do plano
+         final_date = data_final, 
+         outcome = resultado, 
+         months_fil_plan = meses_req_hom, 
+         months_req_final = meses_req_final,
+         months_plan_final = meses_hom_final,
+         in_court = tem_obj)
+         
+
+# write.csv(x = datas_rj_export, file = "datas_rj_export.csv", fileEncoding = 'utf8')
+
+# teste <-  read.csv('datas_rj.csv', fileEncoding = 'utf8')
+
+```
