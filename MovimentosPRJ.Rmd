@@ -340,7 +340,7 @@ discard <- function(x, y){
 ```
 
 
-##### Data inicial
+##### Data de requerimento/ Filling Date
 A data inicial de cada procedimento de recuperação inicial será a data de quando a empresa fez o requerimento da recuperação judicial. A nossa proxy para isso é a data da primeira movimentação oficial no caso, usualmente a data de distribuição do processo.
 
 
@@ -394,6 +394,76 @@ movs_df_resumido <- movs_df %>%
   select(-c('fullMatch', 'linkToPdf', 'id'))
 ```
 
+
+
+#### Data de deferimento da RJ/Start date
+
+Data quando o juiz aprova a documentação apresentada pela empresa e concede o stay period. Regulada pelo artigo 152 da Lei 11.101/2005.
+
+
+```{r deferimento da RJ}
+
+#deixei essa parte de lado porque o deferimento da recuperção judicial é uma das etapas iniciais
+#então não demora muito tempo entre a primeira movimentação e o deferimento
+
+pattern_defiro <- c("defiro o processamento",
+                    "processamento deferido") %>% paste(collapse = " | ")
+
+
+def_pattern <- movs_df_completo %>% 
+  procura_resume(pattern_defiro) %>% 
+  arrange(processo, date) %>% 
+  group_by(processo) %>% 
+  slice(1) %>% 
+  ungroup()
+
+
+#fazendo o mesmo para o artigo 52
+pattern_art52 <- c("artigo 52",
+                    "art. 52", 'art.52') %>% paste(collapse = "|")
+
+def_art52 <- movs_df_completo %>% 
+  procura(pattern_art52) %>%
+  procura_resume("administrado(r|ra)") %>% 
+  arrange(processo, date) %>% 
+  group_by(processo) %>% 
+  slice(1) %>% 
+  ungroup()
+
+
+#existe um processo que não tem movimentação com os padrões acima
+#usaremos o artigo 7º para este (artigo que fala do edital da relação de credores)
+pattern_art7 <- c('artigo 7º')
+
+def_art7 <- movs_df_completo %>% 
+  procura_resume(pattern_art7) %>% 
+  arrange(processo, date) %>% 
+  group_by(processo) %>% 
+  slice(1) %>% 
+  ungroup()
+
+
+
+#juntando as bases e selecionando as colunas desejadas
+def <-  def_art52 %>% 
+  bind_rows(def_pattern, def_art7) %>% 
+  arrange(processo, date) %>% 
+  group_by(processo) %>% 
+  slice(1) %>% 
+  ungroup() %>% 
+  select(processo, date, detalhes, detalhes_resumo, id_linha)
+
+
+def <- def %>% 
+  rename(data_start = date,
+         detalhes_start = detalhes,
+         detalhes_start_resumo = detalhes_resumo,
+         id_linha_start = id_linha)
+
+
+
+
+```
 
 
 
@@ -554,7 +624,7 @@ dec <- dec_filtro %>%
 
 #preparando os dados para o bind
 dec <- dec %>% 
-  mutate(resultado = "bankruptcy") %>% 
+  mutate(resultado = "liquidated") %>% 
   select(processo, date, resultado, detalhes, detalhes_resumo, id_linha)
 
 
@@ -606,7 +676,7 @@ final <- final %>%
 Criaremos um banco de dados juntando as informações coletadas até agora.
 
 
-```{r datas_rj - adicionando data de finalização}
+```{r datas_rj - adicionando datas de deferimento(start) e finalização}
 
 #vamos construir a tabela com todos os números de processo e a data de requerimento da RJ
 #datas_rj ####
@@ -618,7 +688,15 @@ datas_rj <- primeira_mov %>%
 datas_rj <- datas_rj %>% 
   left_join(final, by = "processo")
 
+#incorporando data de deferimento do processo
 
+datas_rj <- datas_rj %>% 
+  left_join(def, by = 'processo')
+
+
+# #checando se falta alguma data de deferimento
+# datas_rj %>% 
+#   filter(is.na(data_start))
 
 
 ```
