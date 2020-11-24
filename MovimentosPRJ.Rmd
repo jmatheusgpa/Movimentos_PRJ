@@ -682,7 +682,7 @@ Criaremos um banco de dados juntando as informações coletadas até agora.
 #datas_rj ####
 datas_rj <- primeira_mov %>% 
   select(processo, date) %>% 
-  rename(data_requerimento = date)
+  rename(data_req = date)
 
 #incorporando data final do processo ####
 datas_rj <- datas_rj %>% 
@@ -771,7 +771,6 @@ discard_list <- discard('1025824-13.2015.8.26.0100', 'ainda está em andamento '
 
 ##### Data de aprovação/rejeição do plano
 
-O FILTRO ESTÁ ERRADO! "CONCEDIDA A RECUPERAÇÃO JUDICIAL" NA VERDADE É A DATA DE DEFERIMENTO, NÃO A DE HOMOLOGAÇÃO
 
 A outra etapa importante é a data quando o plano de recuperação judicial é aprovado ou rejeitado. Para o plano ser aprovado, 1) ou ele não deve ter sofrido objeção dos credores ou 2 ele pode ter sofrido objeção, mas ter sido aprovado pela maioria dos credores em assembleia geral. Se o plano for rejeitado, a recuperação judicial é transformada em falência (o termo técnico "convolada em falência") 
 
@@ -783,12 +782,6 @@ Um problema que acontece é que às vezes um documento cita trechos de decisões
 
 
 ```{r homologação}
-
-
-#primeiro, vamos tentar filtrar pela movimentação para ver quantos casos existem
-# hom_filtro <- movs_df %>% 
-#   filter(movimento == "Concedida a recuperação judicial")
-
 
 
 #analisando os textos manualmente, vemos que as expressões "concedo a recuperação judicial", "o plano deve ser homologado" e "homologacao do plano de recuperão judicial aprovado" são comuns. (Tentei filtrar palavras-chave assim fazendo a tokenização do texto, mas não funcionou tanto quanto eu gostaria)
@@ -1506,39 +1499,6 @@ Assim, para entender os casos nos quais tivemos objeção, vamos procurar as pal
 
 ```{r objeções}
 
-#rascunho para o próximo passo do projeto
-#agora queremos ver quais casos tiveram objeções dos credores
-
-#as objeções são reguladas pelos artigos 55 e 56
-
-# pattern_artsobj <- c("artigo 55", "art. 55", "artigo 56", "art. 56") %>% paste(collapse = " | ")
-# 
-# obj_arts <- movs_df %>% 
-#   procura_resume(pattern_artsobj) %>% 
-#   arrange(processo, date) %>% 
-#   group_by(processo) %>% 
-#   slice(1) %>% 
-#   ungroup()
-# 
-# obj_objec <- movs_df %>% 
-#   procura_resume("objec") %>% 
-#   arrange(processo, date) %>% 
-#   group_by(processo) %>% 
-#   slice(1) %>% 
-#   ungroup()
-#   
-# 
-# pattern_art58 <- c("art(.|igo) 58")
-# 
-# hom_art58 <- movs_df %>% 
-#   procura_resume(pattern_art58) %>% 
-#   arrange(processo, date) %>% 
-#   group_by(processo) %>% 
-#   slice(1) %>% 
-#   ungroup()
-
-
-
 #usei "assembleia" porque alguns juizes falam somente "assembleia" ou "assembleia de credores" ao invés de "assembleia geral de credores"
 #chequei na lei e só existe "assembleia" de credores, logo não há perigo de confundir com outra coisa.
 pattern_agc <- c("assembleia", "agc") %>% paste(collapse = " |")
@@ -1710,23 +1670,20 @@ datas_rj %>%
 ```
 
 
+#### Checando se há planos aprovados por cram down
 
+```{r buscando cram down}
+#só vai ter problema se o plano foi aprovado por cram down e a empresa for reorganizada, então vamos filtrar por estes critérios
 
-Criar uma tabela com casos que tiveram objeção
+cram_reorg <- datas_rj %>% 
+  filter(resultado == "reorganized") %>% 
+  filter(str_detect(detalhes_hom, 'cram'))
 
+#os dois casos citam "cram" nos detalhes da homologação, porém não são casos em que o juiz usou cram down. Logo, está ok para a estimação
 
-
-
-
-
-```{r procurando planos modificados}
-
-
-#não dá para usar isso porque o juiz pode falar "plano aprovado em assembleia" e este plano ser modificado. Olharei manualmente.
-plano_modificado <- movs_df %>% 
-  procura_resume('modificado')
 
 ```
+
 
 
 
@@ -1754,13 +1711,14 @@ months_decisions <- months_decisions %>%
   mutate(n_months = (date - date_lag)/30)
 
 
-#precisamos deixar apenas as datas que ocorreram antes da homologação/rejeição do plano, pois esta marca o final do jogo
+#precisamos deixar apenas as datas que ocorreram após o deferimento(start) antes da homologação/rejeição do plano, 
+#pois estas marcam o início e o final do jogo
 data_hom <- datas_rj %>% 
-  select(processo, data_hom)
+  select(processo, data_hom, data_start)
 
 months_decisions <- months_decisions %>%
   left_join(data_hom) %>% 
-  filter(date <= data_hom)
+  filter(date >= data_start & date <= data_hom)
 
 #limpando a base
 
@@ -1792,31 +1750,27 @@ datas_rj <- datas_rj %>%
 #depois vamos dividir a quantidade de dias por 30 para obter "meses"
 
 
-#diferença entre requerimento e homologação
-
+#diferença entre requerimento e deferimento (start):tempo antes de o juiz conceder stay period
 datas_rj <- datas_rj %>% 
-  mutate(dias_req_hom = (data_hom - data_requerimento),
-         meses_req_hom = dias_req_hom/30)
+  mutate(dias_req_start = (data_start - data_req),
+         meses_req_start = dias_req_start/30)
 
 
-#checar datas inferiores a 30 dias - provável que tenha pego dados de deferimento ao invés de homologação
-# datas_rj %>% 
-#   filter(dias_req_hom <30)
-
-#diferença entre requerimento e finalização da RJ
+#diferença entre deferimento (start) e homologação:tempo analisado pelo jogo
 datas_rj <- datas_rj %>% 
-  mutate(dias_req_final = (data_final - data_requerimento),
-         meses_req_final = dias_req_final/30)
+  mutate(dias_start_hom = (data_hom - data_start),
+         meses_start_hom = dias_start_hom/30)
 
-
-
-#diferença entre homologação e finalização da RJ
+#diferença entre homologação e finalização da RJ: tempo após confirmação/rejeição do plano e finalização do processo
 datas_rj <- datas_rj %>% 
   mutate(dias_hom_final = (data_final - data_hom),
          meses_hom_final = dias_hom_final/30)
 
 
-
+#diferença entre requerimento e finalização da RJ: tempo total que passa na corte
+datas_rj <- datas_rj %>% 
+  mutate(dias_req_final = (data_final - data_req),
+         meses_req_final = dias_req_final/30)
 
 
 ```
@@ -1846,14 +1800,14 @@ E o número de casos para os quais não sabemos nem a data de homologação nem 
 
 
 #o stargazer só faz estatísticas descritivas de dataframes
-datas_rj_descr <- datas_rj %>% select(meses_req_final, meses_req_hom, meses_hom_final) %>% as.data.frame()
+datas_rj_descr <- datas_rj %>% select(meses_req_final, meses_req_start, meses_start_hom, meses_hom_final) %>% as.data.frame()
 
 #transformando para numeric, do contrário a função summary não funciona bem
 datas_rj_descr <- datas_rj_descr %>% 
   mutate_all(as.numeric)
 
 
-colunas_descr <- c("Meses entre requerimento e final", "Meses entre requerimento e homologação", "Meses entre homologação e final")
+colunas_descr <- c("Meses entre requerimento e final", "Meses entre requerimento e deferimento", 'Meses entre deferimento e homologação', "Meses entre homologação e final")
 
 
 datas_rj_descr %>% summary() %>% kable(digits = 2, align = "c", col.names = colunas_descr, caption = "Estatísticas Descritivas")
@@ -1877,7 +1831,7 @@ Outro dado interesante é a mediana dos meses entre o requerimento e a homologa�
 
 datas_rj %>% 
   group_by(tem_obj, resultado) %>% 
-  summarise(mean_req_hom = median(meses_req_hom))
+  summarise(mean_req_hom = median(meses_start_hom))
 
 ```
 
@@ -1927,21 +1881,21 @@ Após o requerimento da recuperação judicial, o juiz suspende todas as cobran�
 
 ```{r g2}
 
-#gráfico de meses entre requerimento e homologação
+#gráfico de meses entre start e homologação
 #usei escala de 12 em 12 para facilitar a visualização dos dados em anos.
 #o argumento binwidth = 12 dentro de geom_histogram() não funcionou como eu esperava
 
-xmin2 <- datas_rj %>% pull(meses_req_hom) %>% as.numeric() %>% min(na.rm = T) %>% floor()
-xmax2 <- datas_rj %>% pull(meses_req_hom) %>% as.numeric() %>% max(na.rm = T) %>% floor()
+xmin2 <- datas_rj %>% pull(meses_start_hom) %>% as.numeric() %>% min(na.rm = T) %>% floor()
+xmax2 <- datas_rj %>% pull(meses_start_hom) %>% as.numeric() %>% max(na.rm = T) %>% floor()
 
   
 datas_rj %>% 
   ggplot()+
-  geom_density(aes(x = meses_req_hom), na.rm = T, fill = "blue", alpha = 0.3, color = "black") +
+  geom_density(aes(x = meses_start_hom), na.rm = T, fill = "blue", alpha = 0.3, color = "black") +
   scale_x_continuous(breaks = seq(0, xmax2, 12))+
   xlab("Meses") +
   geom_vline(aes(xintercept = 6), linetype="dashed", colour="red") +
-  ggtitle("Número de meses entre requerimento e homologação do processo")+
+  ggtitle("Número de meses entre deferimento e homologação do processo")+
   ylab("Densidade")+
   theme_economist_white(base_size = 8, base_family = "sans", horizontal = F) +
   theme(plot.title = element_text(hjust = 0.5, size = 11)) +
@@ -1965,7 +1919,7 @@ Após a homologação do plano, a empresa ainda passa um período de pelo menos 
 ```{r g3}
 
 
-#gráfico de meses entre requerimento e homologação
+#gráfico de meses entre homologação e final
 #usei escala de 12 em 12 para facilitar a visualização dos dados em anos.
 
 
@@ -2021,7 +1975,7 @@ library(lubridate)
 #isso é para coletar novamente as propostas de pagamento, daí calcular as taxas de recuperação de crédito
 
 reorg_obj <- datas_rj %>%
-  filter((tem_obj == 1) & (resultado == 'encerrou RJ com êxito'))
+  filter((tem_obj == 1) & (resultado == 'reorganized'))
   
 
 
@@ -2036,7 +1990,7 @@ reorg_obj_export <- reorg_obj %>%
 
 #lista sem objecao que foi reorganizado: 9 observações
 reorg_sem_obj <- datas_rj %>%
-  filter((tem_obj == 0) & (resultado == 'encerrou RJ com êxito'))
+  filter((tem_obj == 0) & (resultado == 'reorganized'))
 ```
 
 
@@ -2069,16 +2023,6 @@ lista_reorg_precourt <- reorg_sem_obj %>%
 ```
 
 
-```{r lista de processos com dados de movimentação}
-
-lista_mov <- datas_rj %>% 
-  select(processo)
-
-# write.xlsx(lista_mov, file = 'lista_mov.xlsx')
-
-
-```
-
 
 
 
@@ -2087,19 +2031,20 @@ lista_mov <- datas_rj %>%
 #resumindo o banco de dados, mantendo só os dados que serão usados
 
 datas_rj_export <- datas_rj %>% 
-  select(processo, data_requerimento, data_hom, data_final, resultado, meses_req_hom, meses_req_final, meses_hom_final, tem_obj, avg_months_decisions) %>% 
-  rename(filing_date = data_requerimento, 
+  select(processo, data_req, data_start, data_hom, data_final, resultado, meses_req_start, meses_start_hom, meses_hom_final, meses_req_final, tem_obj, avg_months_decisions) %>% 
+  rename(fil_date = data_req, 
          plan_date = data_hom, #data de confirmação ou rejeição do plano
          final_date = data_final, 
          outcome = resultado, 
-         months_fil_plan = meses_req_hom, 
-         months_req_final = meses_req_final,
+         months_fil_start = meses_req_start,
+         months_start_plan = meses_start_hom,
          months_plan_final = meses_hom_final,
+         months_fil_final = meses_req_final,
          in_court = tem_obj)
          
 
 # write.csv(x = datas_rj_export, file = "datas_rj_export.csv", fileEncoding = 'utf8')
-
-# teste <-  read.csv('datas_rj.csv', fileEncoding = 'utf8')
+# 
+# teste <-  read.csv('datas_rj_export.csv', fileEncoding = 'utf8')
 
 ```
