@@ -340,8 +340,8 @@ discard <- function(x, y){
 ```
 
 
-##### Data de requerimento/ Filling Date
-A data inicial de cada procedimento de recuperação inicial será a data de quando a empresa fez o requerimento da recuperação judicial. A nossa proxy para isso é a data da primeira movimentação oficial no caso, usualmente a data de distribuição do processo.
+##### Data de requerimento/ Filing date
+A data inicial de cada processo de recuperação inicial será a data de quando a empresa fez o requerimento da recuperação judicial. A nossa proxy para isso é a data da primeira movimentação oficial no caso, usualmente a data de distribuição do processo.
 
 
 ```{r primeira movimentação}
@@ -399,6 +399,7 @@ movs_df_resumido <- movs_df %>%
 #### Data de deferimento da RJ/Start date
 
 Data quando o juiz aprova a documentação apresentada pela empresa e concede o stay period. Regulada pelo artigo 152 da Lei 11.101/2005.
+Esse é o começo do período analisado pelo modelo.
 
 
 ```{r deferimento da RJ}
@@ -468,8 +469,6 @@ def <- def %>%
 
 
 ##### Datas de finalização do processo de recuperação judicial
-
-As últimas datas que procurei foram as de encerramento do processo de recuperação judicial (RJ). O destino final de uma RJ ou é encerramento da recuperação (empresa se recuperou) ou é falência.
 
 Pesquisamos essas datas antes das datas de aprovação/rejeição do plano porque alguns processos de recuperação judicial são convertidos em falência por rejeição do plano de recuperação em assembleia geral de credores. Nestes casos, a data de rejeição do plano é a mesma data da decretação da falência.
 
@@ -772,12 +771,14 @@ discard_list <- discard('1025824-13.2015.8.26.0100', 'ainda está em andamento '
 ##### Data de aprovação/rejeição do plano
 
 
-A outra etapa importante é a data quando o plano de recuperação judicial é aprovado ou rejeitado. Para o plano ser aprovado, 1) ou ele não deve ter sofrido objeção dos credores ou 2 ele pode ter sofrido objeção, mas ter sido aprovado pela maioria dos credores em assembleia geral. Se o plano for rejeitado, a recuperação judicial é transformada em falência (o termo técnico "convolada em falência") 
+A outra etapa importante é a data quando o plano de recuperação judicial é aprovado ou rejeitado. Para o plano ser aprovado, 1) ou ele não deve ter sofrido objeção dos credores ou 2 ele pode ter sofrido objeção, mas ter sido aprovado pela maioria dos credores em assembleia geral. Se o plano for rejeitado, a recuperação judicial é transformada em falência (o termo técnico é "convolada em falência") 
 
 
 No caso da aprovação (homologação) do plano, identifiquei que os juízes usualmente falam "concedo a recuperação judicial" em suas decisões. Fiz um filtro baseado nesse critério. Aprovação, homologação do plano e concessão da recuperação judicial são sinônimos no contexto desse projeto.
 
 Um problema que acontece é que às vezes um documento cita trechos de decisões anteriores. Então se buscarmos "concedo a recuperação judicial", apareceria mais de uma movimentação para alguns processos. A primeira é a data da aprovação do plano de fato, enquanto a segunda movimentação apenas cita a primeira. A solução para isso foi filtrar apenas as primeiras movimentações encontradas para cada processo.
+
+Essa data marca o final do período analisado pelo modelo usado na minha dissertação.
 
 
 
@@ -1819,11 +1820,6 @@ datas_rj_descr %>% summary() %>% kable(digits = 2, align = "c", col.names = colu
 
 ```
 
-Vemos que, por exemplo, pelo menos metade dos casos de recuperação judicial dessa amostra demoraram mais que 3 anos (40 meses) desde a data de requerimento até o encerramento do processo.
-
-Repare que há um número negativo na coluna "Meses entre homologação e final". Isto se deve a uma classificação incorreta das datas. Preferi deixar no trabalho para mostrar que ainda preciso pensar em formas melhores de checar os dados, e qualquer sugestão para isso é bem vinda.
-
-Outro dado interesante é a mediana dos meses entre o requerimento e a homologação. Pelo menos metade dos casos demora mais que 14 meses nesta fase, sendo que idealmente esse prazo não deveria ser superior a 6 meses. Casos com número de meses entre requerimento e homologação altos podem ser de casos que foram abandonados pela empresa que pediu a recuperação.
 
 
 ```{r tabela tempo dos casos com e sem objeção}
@@ -1875,7 +1871,7 @@ datas_rj %>%
 ```
 
 
-Após o requerimento da recuperação judicial, o juiz suspende todas as cobranças contra a empresa pelo prazo de 180 dias. Neste período espera-se que a empresa apresente um plano de recuperação judicial e consiga apoio de seus credores. Então destacamos o prazo de 6 meses na linha tracejada no gráfico. Percebe-se que a minoria dos casos cai dentro desse prazo "ideal".
+Após o deferimento da recuperação judicial, o juiz suspende todas as cobranças contra a empresa pelo prazo de 180 dias. Neste período espera-se que a empresa apresente um plano de recuperação judicial e consiga apoio de seus credores. Então destacamos o prazo de 6 meses na linha tracejada no gráfico. Percebe-se que a minoria dos casos cai dentro desse prazo "ideal".
 
 
 
@@ -1907,9 +1903,9 @@ datas_rj %>%
 ```
 
 
-Agora o mínimo que temos entre requerimento e homologação do processo são 6.1 meses. Isso faz sentido, pois a firma tem 60 dias para apresentar o plano de recuperação e os credores têm mais 30 dias para apresentar qualquer objeção. Então teoricamente o número mínimo de meses que poderíamos observar é 3.
+Agora o mínimo que temos entre requerimento e homologação do processo é de `r datas_rj$meses_start_hom %>% as.numeric() %>% min()` meses.  Isso faz sentido, pois a firma tem 60 dias para apresentar o plano de recuperação e os credores têm mais 30 dias para apresentar qualquer objeção. Então teoricamente o número mínimo de meses que poderíamos observar é 3.
 
-Prazos muitos altos entre requerimento e homologação ou foram porque o processo demorou mesmo ou porque a empresa faliu após ter o plano rejeitado pelos credores. Nos dois casos, tem uma demora.
+Prazos muitos altos entre deferimento e homologação ou foram porque o processo demorou mesmo ou porque a empresa faliu após ter o plano rejeitado pelos credores. Nos dois casos, tem uma demora.
 
 
 Após a homologação do plano, a empresa ainda passa um período de pelo menos dois anos sob supervisão judicial. Esse é o período mínimo antes que o juiz encerre o processo considerando a empresa recuperada de fato. Se o processo foi encerrado antes disso é porque a empresa não conseguiu cumprir seu plano de recuperação judicial, logo teve seu processo transformado em uma falência. A linha pontilhada agora destaca esse prazo de 24 meses. 
