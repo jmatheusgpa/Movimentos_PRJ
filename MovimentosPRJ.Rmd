@@ -1512,10 +1512,6 @@ agc <- movs_df %>%
   ungroup()
 
 
-agc_semslice <- movs_df %>% 
-  procura_resume(pattern_agc) %>% 
-  arrange(processo,date)
-
 
 #vamos juntar a data da agc com a  base de dados geral para testar
 agc <- agc %>% 
@@ -1688,53 +1684,76 @@ cram_reorg <- datas_rj %>%
 
 
 
-#### Número de meses entre as decisões do juiz
+#### Número de meses entre agcs
 
-```{r meses entre decisões do juiz}
+Proxy para 'number of months between observed proposals'. Ainda será necessário filtrar para os casos que acabaram dentro da corte
 
-#proxy para simular o quanto demora um período dentro do jogo
 
-#usarei todas as movimentações que possivelmente são feitas pelo juiz, coletadas manualmente olhando 'descr_movimentos'
+```{r número de meses entre agcs}
+#outra proxy para o número de meses entre planos observados
+#temos que calcular o número médio de meses entre agcs e o número de agcs por processo
+#isso permitirá calcular a média incondicional posteriormente
 
-mov_juiz <- c("Decisão",'Decisão Determinação', "Mero expediente",'Despacho',"Despacho Proferido", 'Ato ordinatório',"Sentença Completa com Rsolução de Mérito",'Sentença Declarada', "Sentença de Concessão Completa", "Sentença de Concessão Resumida", 'Sentença  Proferida', "Declarado o Encerramento da Falência", "Decretação de falência", "Decretação do Encerramento da Recuperação Judicial", "Decretada a Falência - Sentença Completa", "Decretada a Falência - Sentença Resumida", "Concedida a Antecipação de tutela", "Concedida a Dilação de Prazo", "Concedida a Medida Liminar", "Concedida a recuperação judicial", "Concedida em parte a Antecipação de Tutela","Concedido efeito suspensivo a Recurso")
 
-months_decisions <- movs_df_completo %>% 
-  filter(movimento %in% mov_juiz) %>% 
-  select(processo, date, detalhes) %>%
-  mutate(date_lag = lag(date)) %>% 
+agc_semslice <- movs_df %>% 
+  procura_resume(pattern_agc) %>% 
+  arrange(processo,date)
+
+#calculando  número de meses entre um movimento citando agc e outro
+
+#filtro para movimentos que podem ser duplicados
+agc_duplicado <- c('Remetido ao DJE', 'Autos no Prazo','Data da Publicação SIDAP')
+
+months_agc <- agc_semslice %>% 
+  filter(!(movimento %in% agc_duplicado)) %>%
+  select(processo, date) %>%
+  mutate(date_lag = lag(date)) %>%
   group_by(processo) %>% 
   slice(2:n()) %>% 
   ungroup()
 
-
-months_decisions <- months_decisions %>%
+#calculando meses
+#filtramos número de meses acima de 1 para novamente evitar movimentos duplicados
+#isto é, um movimento que apenas cita 'agc', embora não se trate de uma agc ou uma decisão do juiz
+months_agc <- months_agc %>%
   group_by(processo) %>% 
-  mutate(n_months = (date - date_lag)/30)
+  mutate(n_months = (date - date_lag)/30) %>% 
+  mutate(n_months = as.numeric(n_months)) %>% 
+  filter(n_months > 1) %>% 
+  ungroup()
+  
 
-
-#precisamos deixar apenas as datas que ocorreram após o deferimento(start) antes da homologação/rejeição do plano, 
-#pois estas marcam o início e o final do jogo
+#removendo datas que estão fora do período analisado pelo jogo
 data_hom <- datas_rj %>% 
   select(processo, data_hom, data_start)
 
-months_decisions <- months_decisions %>%
+months_agc <- months_agc %>%
   left_join(data_hom) %>% 
-  filter(date >= data_start & date <= data_hom)
+  filter(date_lag >= data_start & date <= data_hom)
 
-#limpando a base
-
-months_decisions <- months_decisions %>% 
-  group_by(processo) %>% 
-  summarize(avg_months_decisions = mean(n_months)) %>% 
-  ungroup()
+#passando log nas variaveis
+months_agc <- months_agc %>%
+  mutate(ln_n_months = log(n_months)) %>% 
+  select(processo, n_months, ln_n_months)
 
 
+#escrevendo arquivo para cruzar com outras bases
 
-#juntando os dados na base
-datas_rj <- datas_rj %>% 
-  left_join(months_decisions)
+
+
+
+#testando
+#calculando a média do log de meses entre movimentos com agc para todos os processos
+teste <- months_agc %>% 
+  pull(ln_n_months) %>% mean()
+
+# exp(teste)
+
+
+
+
+
 ```
-
 
 
 
@@ -1775,6 +1794,12 @@ datas_rj <- datas_rj %>%
 
 
 ```
+
+
+
+
+
+
 
 
 O resultado dos dados encontrados está na tabela abaixo. 
@@ -1962,7 +1987,7 @@ Visualmente, parece que mais de um terço dos casos possui menos de 24 meses ent
 
 
 
-#### 11. Extração de dados
+#### 11. Exportação de dados
 
 
 
@@ -2007,17 +2032,11 @@ lista_obj <- datas_rj %>%
 
 
 
-```{r lista de processos reorganizados sem objeção}
+```{r months_agc}
 
-lista_reorg_precourt <- reorg_sem_obj %>% 
-  select(processo)
-
-# write.xlsx(lista_reorg_precourt, file = 'lista_reorg_precourt.xlsx')
-
-
+# write.xlsx(months_agc, file = 'months_agc.xlsx')
 
 ```
-
 
 
 
@@ -2027,7 +2046,7 @@ lista_reorg_precourt <- reorg_sem_obj %>%
 #resumindo o banco de dados, mantendo só os dados que serão usados
 
 datas_rj_export <- datas_rj %>% 
-  select(processo, data_req, data_start, data_hom, data_final, resultado, meses_req_start, meses_start_hom, meses_hom_final, meses_req_final, tem_obj, avg_months_decisions) %>% 
+  select(processo, data_req, data_start, data_hom, data_final, resultado, meses_req_start, meses_start_hom, meses_hom_final, meses_req_final, tem_obj) %>% 
   rename(fil_date = data_req, 
          plan_date = data_hom, #data de confirmação ou rejeição do plano
          final_date = data_final, 
@@ -2040,7 +2059,7 @@ datas_rj_export <- datas_rj %>%
          
 
 # write.csv(x = datas_rj_export, file = "datas_rj_export.csv", fileEncoding = 'utf8')
-# 
+
 # teste <-  read.csv('datas_rj_export.csv', fileEncoding = 'utf8')
 
 ```
