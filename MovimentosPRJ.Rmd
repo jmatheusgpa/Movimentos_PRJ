@@ -1699,6 +1699,7 @@ agc_semslice <- movs_df %>%
   procura_resume(pattern_agc) %>% 
   arrange(processo,date)
 
+
 #calculando  número de meses entre um movimento citando agc e outro
 
 #filtro para movimentos que podem ser duplicados
@@ -1724,12 +1725,16 @@ months_agc <- months_agc %>%
   
 
 #removendo datas que estão fora do período analisado pelo jogo
+#isto é, datas que tenham ocorrido antes de a RJ ser deferida ou depois da data de homologação
 data_hom <- datas_rj %>% 
   select(processo, data_hom, data_start)
 
+
 months_agc <- months_agc %>%
   left_join(data_hom) %>% 
-  filter(date_lag >= data_start & date <= data_hom)
+  filter(date_lag >= data_start & date < data_hom)
+
+
 
 #passando log nas variaveis
 months_agc <- months_agc %>%
@@ -2058,7 +2063,7 @@ datas_rj_export <- datas_rj %>%
          in_court = tem_obj)
          
 
-# write.csv(x = datas_rj_export, file = "datas_rj_export.csv", fileEncoding = 'utf8')
+write.csv(x = datas_rj_export, file = "datas_rj_export.csv", fileEncoding = 'utf8')
 
 # teste <-  read.csv('datas_rj_export.csv', fileEncoding = 'utf8')
 
