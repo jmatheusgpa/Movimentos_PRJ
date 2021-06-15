@@ -1695,10 +1695,18 @@ Proxy para 'number of months between observed proposals'. Ainda será necessári
 #isso permitirá calcular a média incondicional posteriormente
 
 
+
+# pattern_agc <- c("assembleia", "agc") %>% paste(collapse = " |")
+
 agc_semslice <- movs_df %>% 
   procura_resume(pattern_agc) %>% 
   arrange(processo,date)
 
+
+
+agc_semslice <- movs_df %>% 
+  procura_resume('ata') %>% 
+  arrange(processo,date)
 
 #calculando  número de meses entre um movimento citando agc e outro
 
@@ -1707,7 +1715,7 @@ agc_duplicado <- c('Remetido ao DJE', 'Autos no Prazo','Data da Publicação SID
 
 months_agc <- agc_semslice %>% 
   filter(!(movimento %in% agc_duplicado)) %>%
-  select(processo, date) %>%
+  select(processo, date, detalhes, id_linha) %>%
   mutate(date_lag = lag(date)) %>%
   group_by(processo) %>% 
   slice(2:n()) %>% 
@@ -1760,6 +1768,84 @@ teste <- months_agc %>%
 
 ```
 
+### Quantidade de AGCs no processo e as decisões de deferir e homologar
+
+```{r agc + deferimento + decisão sobre o PRJ}
+
+
+pattern_agc <- c("assembleia", "agc") %>% paste(collapse = " |")
+
+agc_semslice <- movs_df %>% 
+  procura_resume(pattern_agc) %>% 
+  arrange(processo,date)
+
+
+#calculando  número de meses entre um movimento citando agc e outro
+
+#filtro para movimentos que podem ser duplicados
+agc_duplicado <- c('Remetido ao DJE', 'Autos no Prazo','Data da Publicação SIDAP')
+
+months_agc <- agc_semslice %>% 
+  filter(!(movimento %in% agc_duplicado)) %>%
+  select(processo, date, detalhes) %>%
+  mutate(date_lag = lag(date)) %>%
+  group_by(processo) %>% 
+  slice(2:n()) %>% 
+  ungroup()
+
+#calculando meses
+#filtramos número de meses acima de 1 para novamente evitar movimentos duplicados
+#isto é, um movimento que apenas cita 'agc', embora não se trate de uma agc ou uma decisão do juiz
+months_agc <- months_agc %>%
+  group_by(processo) %>% 
+  mutate(n_months = (date - date_lag)/30) %>% 
+  mutate(n_months = as.numeric(n_months)) %>% 
+  filter(n_months > 1) %>% 
+  ungroup()
+
+
+numerode_agc <- months_agc %>% 
+  group_by(processo) %>% 
+  tally()
+
+#removendo datas que estão fora do período analisado pelo jogo
+#isto é, datas que tenham ocorrido antes de a RJ ser deferida ou depois da data de homologação
+data_hom <- datas_rj %>% 
+  select(processo, data_hom, data_start)
+
+
+timing_agc <- numerode_agc %>%
+  left_join(data_hom) %>% 
+  filter(!(is.na(data_hom))) %>% 
+  mutate(tempo_total = data_hom - data_start) %>% 
+  mutate(tempo_medio_agc = tempo_total / ((n) * 30)) %>% 
+  mutate(tempo_medio_agc = as.numeric(tempo_medio_agc))
+
+
+summary(timing_agc$tempo_medio_agc)
+  
+
+
+#passando log nas variaveis
+timing_agc <- timing_agc %>%
+  mutate(ln_n_months = log(tempo_medio_agc)) %>% 
+  select(processo, tempo_medio_agc, ln_n_months)
+
+
+#escrevendo arquivo para cruzar com outras bases
+
+
+#testando
+#calculando a média do log de meses entre movimentos com agc para todos os processos
+teste <- timing_agc %>% 
+  pull(ln_n_months) %>% mean()
+
+# exp(teste)
+
+
+
+
+```
 
 
 
@@ -2039,7 +2125,7 @@ lista_obj <- datas_rj %>%
 
 ```{r months_agc}
 
-# write.xlsx(months_agc, file = 'months_agc.xlsx')
+write.xlsx(timing_agc, file = 'months_agc.xlsx')
 
 ```
 
