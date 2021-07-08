@@ -1689,85 +1689,6 @@ cram_reorg <- datas_rj %>%
 Proxy para 'number of months between observed proposals'. Ainda será necessário filtrar para os casos que acabaram dentro da corte
 
 
-```{r número de meses entre agcs}
-#outra proxy para o número de meses entre planos observados
-#temos que calcular o número médio de meses entre agcs e o número de agcs por processo
-#isso permitirá calcular a média incondicional posteriormente
-
-
-
-# pattern_agc <- c("assembleia", "agc") %>% paste(collapse = " |")
-
-agc_semslice <- movs_df %>% 
-  procura_resume(pattern_agc) %>% 
-  arrange(processo,date)
-
-
-
-agc_semslice <- movs_df %>% 
-  procura_resume('ata') %>% 
-  arrange(processo,date)
-
-#calculando  número de meses entre um movimento citando agc e outro
-
-#filtro para movimentos que podem ser duplicados
-agc_duplicado <- c('Remetido ao DJE', 'Autos no Prazo','Data da Publicação SIDAP')
-
-months_agc <- agc_semslice %>% 
-  filter(!(movimento %in% agc_duplicado)) %>%
-  select(processo, date, detalhes, id_linha) %>%
-  mutate(date_lag = lag(date)) %>%
-  group_by(processo) %>% 
-  slice(2:n()) %>% 
-  ungroup()
-
-#calculando meses
-#filtramos número de meses acima de 1 para novamente evitar movimentos duplicados
-#isto é, um movimento que apenas cita 'agc', embora não se trate de uma agc ou uma decisão do juiz
-months_agc <- months_agc %>%
-  group_by(processo) %>% 
-  mutate(n_months = (date - date_lag)/30) %>% 
-  mutate(n_months = as.numeric(n_months)) %>% 
-  filter(n_months > 1) %>% 
-  ungroup()
-  
-
-#removendo datas que estão fora do período analisado pelo jogo
-#isto é, datas que tenham ocorrido antes de a RJ ser deferida ou depois da data de homologação
-data_hom <- datas_rj %>% 
-  select(processo, data_hom, data_start)
-
-
-months_agc <- months_agc %>%
-  left_join(data_hom) %>% 
-  filter(date_lag >= data_start & date < data_hom)
-
-
-
-#passando log nas variaveis
-months_agc <- months_agc %>%
-  mutate(ln_n_months = log(n_months)) %>% 
-  select(processo, n_months, ln_n_months)
-
-
-#escrevendo arquivo para cruzar com outras bases
-
-
-
-
-#testando
-#calculando a média do log de meses entre movimentos com agc para todos os processos
-teste <- months_agc %>% 
-  pull(ln_n_months) %>% mean()
-
-# exp(teste)
-
-
-
-
-
-```
-
 ### Quantidade de AGCs no processo e as decisões de deferir e homologar
 
 ```{r agc + deferimento + decisão sobre o PRJ}
@@ -1793,65 +1714,17 @@ months_agc <- agc_semslice %>%
   slice(2:n()) %>% 
   ungroup()
 
-#calculando meses
-#filtramos número de meses acima de 1 para novamente evitar movimentos duplicados
-#isto é, um movimento que apenas cita 'agc', embora não se trate de uma agc ou uma decisão do juiz
-months_agc <- months_agc %>%
-  group_by(processo) %>% 
-  mutate(n_months = (date - date_lag)/30) %>% 
-  mutate(n_months = as.numeric(n_months)) %>% 
-  filter(n_months > 1) %>% 
-  ungroup()
 
-
-numerode_agc <- months_agc %>% 
-  group_by(processo) %>% 
-  tally()
 
 #removendo datas que estão fora do período analisado pelo jogo
 #isto é, datas que tenham ocorrido antes de a RJ ser deferida ou depois da data de homologação
 data_hom <- datas_rj %>% 
   select(processo, data_hom, data_start)
 
+#calculando meses
+#filtramos número de meses acima de 1 para novamente evitar movimentos duplicados
+#isto é, um movimento que apenas cita 'agc', embora não se trate de uma agc ou uma decisão do juiz
 
-timing_agc <- numerode_agc %>%
-  left_join(data_hom) %>% 
-  filter(!(is.na(data_hom))) %>% 
-  mutate(tempo_total = data_hom - data_start) %>% 
-  mutate(tempo_medio_agc = tempo_total / ((n) * 30)) %>% 
-  mutate(tempo_medio_agc = as.numeric(tempo_medio_agc))
-
-
-t1 <- summary(timing_agc$tempo_medio_agc)
-  
-
-
-#passando log nas variaveis
-timing_agc <- timing_agc %>%
-  mutate(ln_n_months = log(tempo_medio_agc)) %>% 
-  select(processo, tempo_medio_agc, ln_n_months)
-
-
-#escrevendo arquivo para cruzar com outras bases
-
-
-#testando
-#calculando a média do log de meses entre movimentos com agc para todos os processos
-teste <- timing_agc %>% 
-  pull(ln_n_months) %>% mean()
-
-# exp(teste)
-
-#testando se há agcs após a data de homologação ####
-
-agc_apos_homol <- months_agc %>% 
-  left_join(data_hom) %>% 
-  filter(date > data_hom)
-
-
-#tem sim
-
-#como ficam as estatísticas se removermos as agcs após a homologação?
 months_agc <- months_agc %>%
   group_by(processo) %>% 
   mutate(n_months = (date - date_lag)/30) %>% 
@@ -1879,12 +1752,14 @@ timing_agc <- numerode_agc %>%
   mutate(tempo_medio_agc = tempo_total / ((n) * 30)) %>% 
   mutate(tempo_medio_agc = as.numeric(tempo_medio_agc))
 
+summary(timing_agc$tempo_medio_agc)
 
-t2 <- summary(timing_agc$tempo_medio_agc)
 
+#passando log nas variaveis
+timing_agc <- timing_agc %>%
+  mutate(ln_n_months = log(tempo_medio_agc)) %>% 
+  select(processo, tempo_medio_agc, ln_n_months)
 
-t1
-t2
 ```
 
 
