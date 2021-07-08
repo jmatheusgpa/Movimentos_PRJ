@@ -1822,7 +1822,7 @@ timing_agc <- numerode_agc %>%
   mutate(tempo_medio_agc = as.numeric(tempo_medio_agc))
 
 
-summary(timing_agc$tempo_medio_agc)
+t1 <- summary(timing_agc$tempo_medio_agc)
   
 
 
@@ -1842,9 +1842,49 @@ teste <- timing_agc %>%
 
 # exp(teste)
 
+#testando se há agcs após a data de homologação ####
+
+agc_apos_homol <- months_agc %>% 
+  left_join(data_hom) %>% 
+  filter(date > data_hom)
 
 
+#tem sim
 
+#como ficam as estatísticas se removermos as agcs após a homologação?
+months_agc <- months_agc %>%
+  group_by(processo) %>% 
+  mutate(n_months = (date - date_lag)/30) %>% 
+  mutate(n_months = as.numeric(n_months)) %>% 
+  filter(n_months > 1) %>% 
+  ungroup() %>% 
+  left_join(data_hom) %>% 
+  filter(date > data_hom)
+
+
+numerode_agc <- months_agc %>% 
+  group_by(processo) %>% 
+  tally()
+
+#removendo datas que estão fora do período analisado pelo jogo
+#isto é, datas que tenham ocorrido antes de a RJ ser deferida ou depois da data de homologação
+data_hom <- datas_rj %>% 
+  select(processo, data_hom, data_start)
+
+
+timing_agc <- numerode_agc %>%
+  left_join(data_hom) %>% 
+  filter(!(is.na(data_hom))) %>% 
+  mutate(tempo_total = data_hom - data_start) %>% 
+  mutate(tempo_medio_agc = tempo_total / ((n) * 30)) %>% 
+  mutate(tempo_medio_agc = as.numeric(tempo_medio_agc))
+
+
+t2 <- summary(timing_agc$tempo_medio_agc)
+
+
+t1
+t2
 ```
 
 
@@ -1942,7 +1982,7 @@ datas_rj_descr %>% summary() %>% kable(digits = 2, align = "c", col.names = colu
 
 
 datas_rj %>% 
-  group_by(tem_obj, resultado) %>% 
+  group_by(resultado) %>% 
   summarise(mean_req_hom = median(meses_start_hom))
 
 ```
